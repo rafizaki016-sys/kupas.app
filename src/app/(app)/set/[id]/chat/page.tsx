@@ -12,17 +12,17 @@ interface Msg {
   content: string;
 }
 
-interface SpeechRecognitionEventLike {
+interface SpeechEventLike {
   results: { [index: number]: { [index: number]: { transcript: string } } };
 }
 
-interface SpeechRecognitionInstance {
+interface SpeechInstance {
   lang: string;
-  onresult: ((e: SpeechRecognitionEventLike) => void) | null;
+  onresult: ((e: SpeechEventLike) => void) | null;
   start: () => void;
 }
 
-type SpeechRecognitionCtor = new () => SpeechRecognitionInstance;
+type SpeechCtor = new () => SpeechInstance;
 
 export default function TutorChatPage() {
   const { id } = useParams<{ id: string }>();
@@ -32,11 +32,14 @@ export default function TutorChatPage() {
 
   function startVoiceInput() {
     const win = window as unknown as {
-      SpeechRecognition?: SpeechRecognitionCtor;
-      webkitSpeechRecognition?: SpeechRecognitionCtor;
+      SpeechRecognition?: SpeechCtor;
+      webkitSpeechRecognition?: SpeechCtor;
     };
     const SpeechRec = win.SpeechRecognition || win.webkitSpeechRecognition;
-    if (!SpeechRec) return alert("Browser/perangkat ini belum mendukung input suara.");
+    if (!SpeechRec) {
+      alert("Browser atau perangkat ini belum mendukung input suara.");
+      return;
+    }
     const rec = new SpeechRec();
     rec.lang = "id-ID";
     rec.onresult = (e) => setInput(e.results[0][0].transcript);
@@ -54,35 +57,39 @@ export default function TutorChatPage() {
   async function handleSend(text: string) {
     const trimmed = text.trim();
     if (!trimmed || loading) return;
+
     setInput("");
-    setMessages((m) => [...m, { role: "user", content: trimmed }]);
+    setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
     setLoading(true);
+
     try {
       const set = getLocalSet(id);
       const res = await fetch(`/api/tutor/conversations/${id}/messages`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAiHeaders() },
-        body: JSON.stringify({ content: trimmed, context: set?.summary_markdown ?? "" }),
+        headers: {
+          "Content-Type": "application/json",
+          ...getAiHeaders(),
+        },
+        body: JSON.stringify({
+          content: trimmed,
+          context: set?.summary_markdown ?? "",
+        }),
       });
 
       const raw = await res.text();
-      let data: { reply?: string; error?: string } = {};
-      try {
-        data = JSON.parse(raw);
-      } catch {
-        throw new Error(`HTTP ${res.status}: respon server bukan JSON`);
+      let replyText = `Gagal menjawab (HTTP ${res.status}).`;
+
+      if (raw.trim().startsWith("{")) {
+        const data = JSON.parse(raw) as { reply?: string; error?: string };
+        replyText = data.reply || data.error || replyText;
+      } else {
+        replyText = `HTTP ${res.status}: respon server bukan JSON.`;
       }
 
-      setMessages((m) => [
-        ...m,
-        {
-          role: "assistant",
-          content: data.reply ?? data.error ?? `Gagal menjawab (HTTP ${res.status}).`,
-        },
-      ]);
+      setMessages((prev) => [...prev, { role: "assistant", content: replyText }]);
     } catch (err) {
       const detail = err instanceof Error ? err.message : "Koneksi bermasalah.";
-      setMessages((m) => [...m, { role: "assistant", content: `Error: ${detail}` }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${detail}` }]);
     } finally {
       setLoading(false);
     }
