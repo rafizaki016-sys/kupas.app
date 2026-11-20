@@ -6,7 +6,7 @@ const config: CapacitorConfig = {
   webDir: "out",
   server: {
     // Ganti dengan URL Vercel produksi milikmu setelah deploy
-    url: "https://kupas.vercel.app",
+    url: "https://kupas-app-rz5g.vercel.app/",
     cleartext: false,
   },
 };
