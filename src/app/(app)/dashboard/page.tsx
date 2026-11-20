@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
-  BookOpen, 
+  BookOpen,
   FileText,
   Flame,
   Folder,
@@ -20,10 +20,59 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { getLocalSets, saveLocalSet, StudySet } from "@/lib/data";
+import { getLocalSet, saveLocalSet, StudySet } from "@/lib/data";
 import { getAiHeaders } from "@/lib/byok";
 
 type SourceFilter = "all" | "doc" | "slide" | "audio" | "youtube";
+
+function readAllLocalSets(): StudySet[] {
+  if (typeof window === "undefined") return [];
+  const found: StudySet[] = [];
+  const seenIds = new Set<string>();
+
+  const tryPush = (val: unknown) => {
+    if (!val) return;
+    if (Array.isArray(val)) {
+      val.forEach((item) => tryPush(item));
+      return;
+    }
+    if (typeof val === "object") {
+      const rec = val as Record<string, unknown>;
+      if (typeof rec.id === "string" && typeof rec.title === "string") {
+        if (!seenIds.has(rec.id)) {
+          seenIds.add(rec.id);
+          found.push(val as StudySet);
+        }
+      } else if (Array.isArray(rec.sets)) {
+        rec.sets.forEach((item) => tryPush(item));
+      } else if (Array.isArray(rec.items)) {
+        rec.items.forEach((item) => tryPush(item));
+      }
+    }
+  };
+
+  for (let i = 0; i < window.localStorage.length; i += 1) {
+    const key = window.localStorage.key(i);
+    if (!key) continue;
+    const lower = key.toLowerCase();
+    if (
+      lower.includes("kupas") ||
+      lower.includes("study") ||
+      lower.includes("set") ||
+      lower.includes("lesson")
+    ) {
+      const raw = window.localStorage.getItem(key);
+      if (!raw || (!raw.trim().startsWith("{") && !raw.trim().startsWith("["))) continue;
+      try {
+        tryPush(JSON.parse(raw));
+      } catch {
+        // abaikan nilai non-JSON
+      }
+    }
+  }
+
+  return found;
+}
 
 function detectSourceKind(sourceType?: string): SourceFilter {
   const s = (sourceType || "").toLowerCase();
@@ -96,7 +145,13 @@ export default function DashboardPage() {
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    setSets(getLocalSets() ?? []);
+    const loaded = readAllLocalSets();
+    if (loaded.length > 0) {
+      setSets(loaded);
+    } else {
+      const single = getLocalSet("latest") || getLocalSet("current");
+      setSets(single ? [single] : []);
+    }
   }, []);
 
   const totalFlashcards = useMemo(
@@ -137,7 +192,10 @@ export default function DashboardPage() {
     return Math.max(240, sets.length * 45 + totalFlashcards * 6 + quizTotal * 10);
   }, [sets, totalFlashcards]);
 
-  const streakDays = useMemo(() => Math.max(5, sets.length > 0 ? Math.min(30, sets.length + 4) : 5), [sets.length]);
+  const streakDays = useMemo(
+    () => Math.max(5, sets.length > 0 ? Math.min(30, sets.length + 4) : 5),
+    [sets.length]
+  );
 
   async function handleQuickGenerate(e: React.FormEvent) {
     e.preventDefault();
@@ -165,7 +223,7 @@ export default function DashboardPage() {
         const created = (await res.json()) as StudySet & { id?: string };
         if (created && created.id) {
           saveLocalSet(created);
-          setSets(getLocalSets() ?? []);
+          setSets(readAllLocalSets());
           setPromptInput("");
           router.push(`/set/${created.id}/summary`);
           return;
@@ -205,7 +263,7 @@ export default function DashboardPage() {
         },
       };
       saveLocalSet(fallbackSet);
-      setSets(getLocalSets() ?? []);
+      setSets(readAllLocalSets());
       setPromptInput("");
       router.push(`/set/${fallbackId}/summary`);
     } catch {
@@ -225,7 +283,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] text-[#14181F] antialiased">
-      {/* Top Bar */}
       <header className="sticky top-0 z-30 border-b border-[#E5DEC9] bg-[#FAF7F2]/95 backdrop-blur-sm">
         <div className="mx-auto flex h-16 max-w-[1040px] items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
@@ -233,7 +290,7 @@ export default function DashboardPage() {
               type="button"
               onClick={() => setDrawerOpen((v) => !v)}
               aria-label="Buka menu navigasi"
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#DCD4C0] bg-white text-[#14181F] transition hover:bg-[#F3EFE4]"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#DCD4C0] bg-
             >
               {drawerOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
             </button>
@@ -267,7 +324,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Drawer Menu */}
         {drawerOpen && (
           <div className="border-t border-[#E5DEC9] bg-white px-4 py-3 sm:px-6">
             <nav aria-label="Navigasi Kupas" className="mx-auto flex max-w-[1040px] flex-wrap items-center gap-2 text-xs font-semibold">
@@ -305,7 +361,6 @@ export default function DashboardPage() {
       </header>
 
       <main className="mx-auto max-w-[1040px] space-y-6 px-4 py-8 sm:px-6 sm:py-10">
-        {/* Hero Prompt Box */}
         <section aria-labelledby="prompt-heading" className="space-y-4">
           <h1
             id="prompt-heading"
@@ -334,7 +389,7 @@ export default function DashboardPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <Link
                   href="/snap"
-                  className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#DCD4C0] bg-[#FAF7F2] px-3 text-xs font-semibold text-[#374151] transition hover:border-[#14181F]"
+                                    className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#DCD4C0] bg-[#FAF7F2] px-3 text-xs font-semibold text-[#374151] transition hover:border-[#14181F]"
                 >
                   <Mic className="h-3.5 w-3.5 text-[#4B5563]" aria-hidden="true" />
                   <span>Rekam</span>
@@ -375,7 +430,6 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* 2 Kartu Pintasan: Review Flashcard & Lanjutkan Materi */}
         <section aria-label="Pintasan belajar" className="grid gap-4 md:grid-cols-2">
           <Link
             href={latestSet ? `/set/${latestSet.id}/flashcards` : "/new"}
@@ -411,8 +465,8 @@ export default function DashboardPage() {
                 <p className="truncate text-sm font-bold text-[#14181F]">
                   {latestSet ? `Lanjutkan: ${latestSet.title}` : "Mulai buat catatan pertama"}
                 </p>
-                <p className="text-xs text-[#6B7280]">
-                  {latestSet ? `Bab 2 dari ${countChapters(latestSet.summary_markdown)}` : "Unggah PDF, slide, atau teks"}
+                <p className
+                                  {latestSet ? `Bab 2 dari ${countChapters(latestSet.summary_markdown)}` : "Unggah PDF, slide, atau teks"}
                 </p>
               </div>
             </div>
@@ -424,13 +478,11 @@ export default function DashboardPage() {
           </Link>
         </section>
 
-        {/* Daftar Catatan */}
         <section aria-labelledby="catatan-heading" className="space-y-4 pt-1">
           <h2 id="catatan-heading" className="text-lg font-bold text-[#14181F]">
             Catatan
           </h2>
 
-          {/* Filter Folder & Jenis Sumber */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex items-center gap-1.5 rounded-full border border-[#DCD4C0] bg-white px-3 py-1.5 text-xs font-semibold text-[#374151]">
               <Folder className="h-3.5 w-3.5 text-[#6B7280]" aria-hidden="true" />
@@ -468,7 +520,6 @@ export default function DashboardPage() {
             })}
           </div>
 
-          {/* Grid Kartu Catatan */}
           {filteredSets.length === 0 ? (
             <div className="rounded-xl border border-[#DCD4C0] bg-white p-8 text-center">
               <p className="text-sm font-semibold text-[#14181F]">
@@ -551,3 +602,5 @@ export default function DashboardPage() {
     </div>
   );
 }
+                  
+  
