@@ -41,7 +41,7 @@ export async function POST(req: Request) {
 
   const google = createGoogleGenerativeAI({ apiKey });
   const { object } = await generateObject({
-    model: google("gemini-2.5-flash"),
+    model: google("gemini-3.8-flash"),
     schema: OutputSchema,
     prompt: `Buat kit belajar bahasa Indonesia dari materi berikut (judul: ${parsed.data.title}):
 1. summary_markdown yang rapi.
