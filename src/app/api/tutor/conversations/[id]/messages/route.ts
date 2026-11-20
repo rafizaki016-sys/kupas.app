@@ -26,7 +26,7 @@ export async function POST(req: Request) {
 
     const google = createGoogleGenerativeAI({ apiKey });
     const { text } = await generateText({
-      model: google("gemini-2.5-flash"),
+        model: google("gemini-3.8-flash"),
       system: `Kamu adalah Tutor AI Kupas yang ramah, jelas, dan setara dalam bahasa Indonesia. Jawab berdasarkan materi berikut:\n${parsed.data.context ?? ""}`,
       prompt: parsed.data.content,
     });
