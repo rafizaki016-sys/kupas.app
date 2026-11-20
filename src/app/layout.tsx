@@ -1,5 +1,16 @@
-import { AppShell } from "@/components/app-shell";
+import type { Metadata } from "next";
+import "./globals.css";
 
-export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
-  return <AppShell>{children}</AppShell>;
+export const metadata: Metadata = {
+  title: "Kupas — Teman Belajar AI Gratis",
+  description:
+    "Ubah PDF, slide, YouTube, dan foto soal jadi rangkuman, flashcard offline, kuis, dan Tutor AI 100% gratis tanpa paywall.",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="id">
+      <body>{children}</body>
+    </html>
+  );
 }
