@@ -30,6 +30,19 @@ const OPTION_LABELS = ["A", "B", "C", "D", "E", "F"];
 function normalizeQuiz(items: RawQuizItem[]): NormalizedQuestion[] {
   return items.map((item) => {
     const rec = item as unknown as Record<string, unknown>;
+    const question =
+      typeof rec.question === "string"
+        ? rec.question
+        : typeof rec.q === "string"
+          ? rec.q
+          : typeof rec.prompt === "string"
+            ? rec.prompt
+            : "";
+    const options = Array.isArray(rec.options)
+      ? rec.options.map((opt) => String(opt))
+      : Array.isArray(rec.choices)
+        ? rec.choices.map((opt) => String(opt))
+        : [];
     const correctIndex =
       typeof rec.correct_index === "number"
         ? rec.correct_index
@@ -37,13 +50,15 @@ function normalizeQuiz(items: RawQuizItem[]): NormalizedQuestion[] {
           ? rec.answer_index
           : typeof rec.correctIndex === "number"
             ? rec.correctIndex
-            : 0;
+            : typeof rec.answer === "number"
+              ? rec.answer
+              : 0;
     const explanation =
       typeof rec.explanation === "string" ? rec.explanation.trim() : "";
 
     return {
-      question: item.question,
-      options: item.options,
+      question,
+      options,
       correctIndex,
       explanation,
     };
@@ -113,7 +128,6 @@ export default function QuizPage() {
     setFinished(false);
   }
 
-  // Halaman Hasil Akhir
   if (finished) {
     const verdict =
       scorePercent >= 80
@@ -173,7 +187,6 @@ export default function QuizPage() {
           </div>
         </div>
 
-        {/* Tinjauan Jawaban */}
         <section className="space-y-3">
           <h2 className="text-base font-bold text-text">Tinjauan Jawaban</h2>
           {questions.map((q, idx) => {
@@ -223,7 +236,6 @@ export default function QuizPage() {
 
   return (
     <div className="mx-auto max-w-[760px] p-4 md:p-8">
-      {/* Header & Progress Bar */}
       <div className="rounded-lg border border-border bg-surface p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -243,7 +255,6 @@ export default function QuizPage() {
           </span>
         </div>
 
-        {/* Progress Bar */}
         <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-surface-subtle">
           <div
             className="h-full rounded-full bg-accent transition-all duration-300"
@@ -251,7 +262,6 @@ export default function QuizPage() {
           />
         </div>
 
-        {/* Indikator Nomor Soal */}
         <div className="mt-3 flex flex-wrap gap-1.5">
           {questions.map((q, idx) => {
             const ans = answers[idx];
@@ -282,7 +292,6 @@ export default function QuizPage() {
         </div>
       </div>
 
-      {/* Kartu Soal */}
       <div className="mt-5 rounded-lg border border-border bg-surface p-6 shadow-sm">
         <h1 className="text-lg font-bold leading-snug text-text md:text-xl">
           {current.question}
@@ -337,7 +346,6 @@ export default function QuizPage() {
           })}
         </div>
 
-        {/* Umpan Balik & Pembahasan */}
         {hasAnswered && (
           <div
             className={`mt-5 rounded-lg border p-4 text-sm ${
@@ -359,7 +367,6 @@ export default function QuizPage() {
           </div>
         )}
 
-        {/* Tombol Lanjut */}
         <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
           <p className="text-xs text-muted">
             {hasAnswered ? "Lanjut ke soal berikutnya" : "Pilih salah satu jawaban di atas"}
@@ -373,3 +380,4 @@ export default function QuizPage() {
     </div>
   );
 }
+    
