@@ -1,153 +1,206 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Mic, Send, Volume2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { getLocalSet } from "@/lib/data";
-import { getAiHeaders } from "@/lib/byok";
+import {
+  ArrowLeft,
+  ArrowRight,
+  BookOpen,
+  FileText,
+  Layers,
+  ListChecks,
+  MessageSquare,
+  Network,
+  Sparkles,
+  WifiOff,
+} from "lucide-react";
+import { getLocalSet, StudySet } from "@/lib/data";
 
-interface Msg {
-  role: "user" | "assistant";
-  content: string;
-}
-
-interface SpeechEventLike {
-  results: { [index: number]: { [index: number]: { transcript: string } } };
-}
-
-interface SpeechInstance {
-  lang: string;
-  onresult: ((e: SpeechEventLike) => void) | null;
-  start: () => void;
-}
-
-type SpeechCtor = new () => SpeechInstance;
-
-export default function TutorChatPage() {
+export default function SetOverviewPage() {
   const { id } = useParams<{ id: string }>();
-  const [messages, setMessages] = useState<Msg[]>([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [set, setSet] = useState<StudySet | null>(null);
 
-  function startVoiceInput() {
-    const win = window as unknown as {
-      SpeechRecognition?: SpeechCtor;
-      webkitSpeechRecognition?: SpeechCtor;
-    };
-    const SpeechRec = win.SpeechRecognition || win.webkitSpeechRecognition;
-    if (!SpeechRec) {
-      alert("Browser atau perangkat ini belum mendukung input suara.");
-      return;
-    }
-    const rec = new SpeechRec();
-    rec.lang = "id-ID";
-    rec.onresult = (e) => setInput(e.results[0][0].transcript);
-    rec.start();
+  useEffect(() => {
+    setSet(getLocalSet(id));
+  }, [id]);
+
+  if (!set) {
+    return (
+      <div className="mx-auto max-w-[960px] p-6">
+        <div className="rounded-lg border border-border bg-surface p-8 text-center text-sm text-muted">
+          Materi tidak ditemukan.
+        </div>
+      </div>
+    );
   }
 
-  function speakText(text: string) {
-    if (!("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = "id-ID";
-    window.speechSynthesis.speak(utter);
-  }
+  const flashcardCount = set.flashcards?.length ?? 0;
+  const quizCount = set.quiz?.length ?? 0;
+  const sectionCount = (set.summary_markdown || "")
+    .replace(/\\n/g, "\n")
+    .split("\n")
+    .filter((line) => line.trim().startsWith("## ") || line.trim().startsWith("# ")).length;
 
-  async function handleSend(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed || loading) return;
-
-    setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
-    setLoading(true);
-
-    try {
-      const set = getLocalSet(id);
-      const res = await fetch(`/api/tutor/conversations/${id}/messages`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...getAiHeaders(),
-        },
-        body: JSON.stringify({
-          content: trimmed,
-          context: set?.summary_markdown ?? "",
-        }),
-      });
-
-      const raw = await res.text();
-      let replyText = `Gagal menjawab (HTTP ${res.status}).`;
-
-      if (raw.trim().startsWith("{")) {
-        const data = JSON.parse(raw) as { reply?: string; error?: string };
-        replyText = data.reply || data.error || replyText;
-      } else {
-        replyText = `HTTP ${res.status}: respon server bukan JSON.`;
-      }
-
-      setMessages((prev) => [...prev, { role: "assistant", content: replyText }]);
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : "Koneksi bermasalah.";
-      setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${detail}` }]);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const modes = [
+    {
+      key: "summary",
+      title: "Catatan & Rangkuman",
+      description: "Baca poin inti, konsep utama, dan daftar isi terstruktur.",
+      meta: sectionCount > 0 ? `${sectionCount} bagian materi` : "Ringkasan siap baca",
+      href: `/set/${set.id}/summary`,
+      icon: FileText,
+      accentClass: "bg-accent/10 text-accent",
+      cta: "Buka Catatan",
+    },
+    {
+      key: "mindmap",
+      title: "Peta Konsep",
+      description: "Jelajahi hubungan antar-konsep dalam diagram cabang interaktif.",
+      meta: "Geser & lipat cabang",
+      href: `/set/${set.id}/mindmap`,
+      icon: Network,
+      accentClass: "bg-sky-500/10 text-sky-700",
+      cta: "Lihat Peta Konsep",
+    },
+    {
+      key: "quiz",
+      title: "Latihan Kuis",
+      description: "Uji pemahaman dengan pilihan ganda, skor instan, dan pembahasan.",
+      meta: `${quizCount} soal latihan`,
+      href: `/set/${set.id}/quiz`,
+      icon: ListChecks,
+      accentClass: "bg-amber-500/10 text-amber-700",
+      cta: "Mulai Kuis",
+    },
+    {
+      key: "flashcards",
+      title: "Flashcard Offline",
+      description: "Hafalkan istilah & konsep kunci dengan kartu bolak-balik.",
+      meta: `${flashcardCount} kartu hafalan`,
+      href: `/set/${set.id}/flashcards`,
+      icon: Layers,
+      accentClass: "bg-emerald-500/10 text-emerald-700",
+      cta: "Latih Flashcard",
+    },
+  ];
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-120px)] max-w-[720px] flex-col p-4">
-      <div role="log" aria-live="polite" className="flex-1 space-y-3 overflow-y-auto pb-4">
-        {messages.length === 0 && (
-          <div className="rounded-lg border border-border bg-surface p-6 text-center text-sm text-muted">
-            Ada bagian yang masih bingung? Tanyakan lewat ketikan atau tombol mikrofon di bawah.
-          </div>
-        )}
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`max-w-[85%] whitespace-pre-wrap rounded-lg p-3 text-sm ${
-              m.role === "user"
-                ? "ml-auto bg-accent text-on-accent"
-                : "mr-auto border border-border bg-surface text-text"
-            }`}
-          >
-            {m.content}
-            {m.role === "assistant" && (
-              <button
-                type="button"
-                onClick={() => speakText(m.content)}
-                aria-label="Bacakan jawaban"
-                className="mt-2 flex items-center gap-1 text-xs text-accent"
-              >
-                <Volume2 className="h-3.5 w-3.5" /> Dengarkan
-              </button>
-            )}
-          </div>
-        ))}
+    <div className="mx-auto max-w-[980px] space-y-6 p-4 md:p-8">
+      {/* Navigasi Kembali */}
+      <div>
+        <Link
+          href="/sets"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted transition hover:text-accent"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Kembali ke Daftar Materi
+        </Link>
       </div>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          handleSend(input);
-        }}
-        className="flex gap-2 border-t border-border pt-3"
-      >
-        <Button type="button" variant="secondary" onClick={startVoiceInput} aria-label="Tanya lewat suara">
-          <Mic className="h-4 w-4" />
-        </Button>
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Tanyakan apa saja dari materi ini..."
-          className="h-10 flex-1 rounded-md border border-border-input bg-surface px-3 text-sm"
-        />
-        <Button type="submit" loading={loading} disabled={!input.trim()} aria-label="Kirim">
-          <Send className="h-4 w-4" />
-        </Button>
-      </form>
+      {/* Hero Header Set Materi */}
+      <section className="rounded-xl border border-border bg-surface p-6 shadow-sm md:p-7">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="inline-flex items-center gap-1 rounded-full bg-surface-subtle px-2.5 py-1 font-semibold uppercase tracking-wide text-accent">
+            <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
+            {set.source_type}
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-success-bg px-2.5 py-1 font-medium text-success-text">
+            <WifiOff className="h-3.5 w-3.5" aria-hidden="true" />
+            Tersimpan Offline
+          </span>
+        </div>
+
+        <h1 className="mt-3 text-2xl font-bold tracking-tight text-text md:text-3xl">
+          {set.title}
+        </h1>
+
+        <p className="mt-2 text-sm text-muted">
+          Pilih mode belajar yang paling cocok untukmu saat ini atau tanya langsung ke Tutor AI.
+        </p>
+
+        {/* Ringkasan Angka Cepat */}
+        <div className="mt-5 grid grid-cols-3 gap-3 border-t border-border pt-5">
+          <div className="rounded-lg bg-surface-subtle/70 p-3">
+            <p className="text-xs text-muted">Bagian Catatan</p>
+            <p className="mt-0.5 text-lg font-bold text-text">
+              {sectionCount > 0 ? sectionCount : 1}
+            </p>
+          </div>
+          <div className="rounded-lg bg-surface-subtle/70 p-3">
+            <p className="text-xs text-muted">Flashcard</p>
+            <p className="mt-0.5 text-lg font-bold text-accent">{flashcardCount}</p>
+          </div>
+          <div className="rounded-lg bg-surface-subtle/70 p-3">
+            <p className="text-xs text-muted">Soal Kuis</p>
+            <p className="mt-0.5 text-lg font-bold text-text">{quizCount}</p>
+          </div>
+        </div>
+      </section>
+
+      {/* Grid 4 Mode Belajar */}
+      <section aria-label="Mode belajar" className="grid gap-4 sm:grid-cols-2">
+        {modes.map((mode) => {
+          const Icon = mode.icon;
+          return (
+            <Link
+              key={mode.key}
+              href={mode.href}
+              className="group flex flex-col justify-between rounded-xl border border-border bg-surface p-5 shadow-sm transition hover:border-accent/60 hover:shadow-md"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className={`flex h-10 w-10 items-center justify-center rounded-lg ${mode.accentClass}`}
+                  >
+                    <Icon className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <span className="rounded-full bg-surface-subtle px-2.5 py-1 text-[11px] font-semibold text-muted">
+                    {mode.meta}
+                  </span>
+                </div>
+
+                <h2 className="mt-4 text-base font-bold text-text group-hover:text-accent">
+                  {mode.title}
+                </h2>
+                <p className="mt-1 text-xs leading-relaxed text-muted">
+                  {mode.description}
+                </p>
+              </div>
+
+              <div className="mt-5 flex items-center gap-1.5 text-xs font-semibold text-accent">
+                <span>{mode.cta}</span>
+                <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+              </div>
+            </Link>
+          );
+        })}
+      </section>
+
+      {/* Banner Tutor AI */}
+      <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-accent/25 bg-accent/5 p-5">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent text-on-accent">
+            <Sparkles className="h-5 w-5" aria-hidden="true" />
+          </div>
+          <div>
+            <h2 className="text-sm font-bold text-text">
+              Masih ada bagian yang bikin bingung?
+            </h2>
+            <p className="mt-0.5 text-xs text-muted">
+              Diskusikan langsung dengan Tutor AI Kupas berbasis isi materi ini lewat teks atau suara.
+            </p>
+          </div>
+        </div>
+
+        <Link
+          href={`/set/${set.id}/chat`}
+          className="inline-flex h-10 items-center gap-2 rounded-md bg-accent px-4 text-xs font-semibold text-on-accent transition hover:bg-accent-hover"
+        >
+          <MessageSquare className="h-4 w-4" />
+          Buka Tutor AI
+        </Link>
+      </section>
     </div>
   );
 }
