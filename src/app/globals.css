@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-bg: #F8FAFC;
+  --color-surface: #FFFFFF;
+  --color-surface-subtle: #F1F5F9;
+  --color-border: #E2E8F0;
+  --color-border-input: #64748B;
+  --color-text: #0F172A;
+  --color-text-muted: #475569;
+
+  --color-accent: #0F766E;
+  --color-accent-hover: #115E59;
+  --color-on-accent: #FFFFFF;
+
+  --color-danger: #DC2626;
+  --color-on-danger: #FFFFFF;
+  --color-danger-bg: #FEF2F2;
+  --color-danger-text: #B91C1C;
+
+  --color-success: #15803D;
+  --color-on-success: #FFFFFF;
+  --color-success-bg: #F0FDF4;
+  --color-success-text: #166534;
+
+  --color-warning: #B45309;
+  --color-on-warning: #FFFFFF;
+  --color-warning-bg: #FFFBEB;
+  --color-warning-text: #92400E;
+
+  --font-sans: Inter, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.08);
+  --shadow-lg: 0 12px 32px -4px rgb(0 0 0 / 0.12);
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+}
