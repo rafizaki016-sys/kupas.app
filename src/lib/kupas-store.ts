@@ -143,7 +143,7 @@ export function cleanTopicFromInput(raw: string): string {
 
   const strippedCommand = trimmed
     .replace(
-      /^(buatkan|buat|tolong buatkan|tolong|bantu buatkan|bantu)\s+(pelajaran|materi|catatan|ringkasan|pembelajaran)\s+(dari|tentang|mengenai|soal)?\s*/i,
+      /^(buatkan|buat|tolong buatkan|tolong|bantu buatkan|bantu|pelajari|jelaskan|ringkaskan)\s+(pelajaran|materi|catatan|ringkasan|pembelajaran)?\s*(dari|tentang|mengenai|soal)?\s*/i,
       "",
     )
     .replace(/^(materi|pelajaran|catatan|ringkasan)\s+(tentang|mengenai)?\s*/i, "")
@@ -169,11 +169,10 @@ export function cleanTopicFromInput(raw: string): string {
           .trim();
 
         if (cleaned.length >= 4) {
-          const titled = cleaned
+          return cleaned
             .split(" ")
             .map((w) => (w.length > 0 ? w[0].toUpperCase() + w.slice(1) : w))
             .join(" ");
-          return titled;
         }
       }
 
@@ -219,6 +218,19 @@ export function upsertStudyNote(note: StudyNote): StudyNote[] {
   return next;
 }
 
+function dedupeStrings(items: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of items) {
+    const clean = item.trim();
+    const key = clean.toLowerCase();
+    if (!clean || seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+  }
+  return out;
+}
+
 export function buildRichSubjectNote(params: {
   source?: string;
   query?: string;
@@ -238,12 +250,13 @@ export function buildRichSubjectNote(params: {
   const lower = `${cleanTitle} ${rawQuery}`.toLowerCase();
   const id = `note-${Date.now()}`;
 
-  // Jika pengguna menempel isi teks/catatan panjang, urai menjadi bab dari isi aslinya
-  const sentences = rawQuery
-    .replace(/\r\n/g, "\n")
-    .split(/(?<=[.!?])\s+|\n+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length >= 15);
+  // 1. Jika pengguna menempel isi teks/catatan panjang, urai dari kalimat aslinya
+  const sentences = dedupeStrings(
+    rawQuery
+      .replace(/\r\n/g, "\n")
+      .split(/(?<=[.!?])\s+|\n+/)
+      .filter((s) => s.trim().length >= 16),
+  );
 
   if (sentences.length >= 3 && rawQuery.length > 140) {
     const perGroup = Math.max(2, Math.ceil(sentences.length / 3));
@@ -253,13 +266,24 @@ export function buildRichSubjectNote(params: {
       sentences.slice(perGroup * 2),
     ].filter((g) => g.length > 0);
 
-    const chapters: ChapterItem[] = groups.map((grp, idx) => ({
-      title: `Bab ${idx + 1} · ${
-        idx === 0 ? "Konsep & Dasar" : idx === 1 ? "Penjelasan & Mekanisme" : "Penerapan & Kesimpulan"
-      }`,
-      summary: grp[0],
-      points: grp.slice(1).length > 0 ? grp.slice(1) : [grp[0]],
-    }));
+    const chapterLabels = [
+      "Konsep & Dasar",
+      "Uraian & Mekanisme",
+      "Penerapan & Kesimpulan",
+    ];
+
+    const chapters: ChapterItem[] = groups.map((grp, idx) => {
+      const summary = grp[0];
+      const details = grp.slice(1);
+      return {
+        title: `Bab ${idx + 1} · ${chapterLabels[idx] || "Pembahasan Lanjutan"}`,
+        summary,
+        points:
+          details.length > 0
+            ? details
+            : [`Poin kunci: ${summary}`],
+      };
+    });
 
     return {
       id,
@@ -273,21 +297,36 @@ export function buildRichSubjectNote(params: {
       chapters,
       flashcards: chapters.map((ch, idx) => ({
         id: `${id}-fc-${idx + 1}`,
-        front: `Apa inti dari ${ch.title}?`,
-        back: `${ch.summary} ${ch.points[0] || ""}`.trim(),
+        front: `Jelaskan poin inti pada ${ch.title}`,
+        back: `${ch.summary}${ch.points[0] && ch.points[0] !== `Poin kunci: ${ch.summary}` ? ` — ${ch.points[0]}` : ""}`,
       })),
       quiz: [
         {
-          question: `Pernyataan mana yang paling tepat terkait ${chapters[0]?.title || cleanTitle}?`,
+          question: `Pernyataan manakah yang sesuai dengan ${chapters[0]?.title || cleanTitle}?`,
           options: [
             chapters[0]?.summary || sentences[0],
-            "Mengabaikan seluruh data pada materi sumber",
-            "Menukar hasil akhir tanpa melalui langkah dasar",
-            "Menghapus semua contoh penerapan",
+            "Mengabaikan seluruh informasi utama pada teks sumber",
+            "Menyimpulkan hasil akhir tanpa memperhatikan data awal",
+            "Menghapus seluruh pengecualian yang dijelaskan materi",
           ],
           correctIndex: 0,
           explanation: chapters[0]?.points[0] || chapters[0]?.summary || "",
         },
+        ...(chapters[1]
+          ? [
+              {
+                question: `Apa pembahasan utama pada ${chapters[1].title}?`,
+                options: [
+                  chapters[1].summary,
+                  "Daftar pustaka tanpa penjelasan konsep",
+                  "Pengulangan definisi tanpa mekanisme",
+                  "Catatan yang bertentangan dengan bab pertama",
+                ],
+                correctIndex: 0,
+                explanation: chapters[1].points[0] || chapters[1].summary,
+              },
+            ]
+          : []),
       ],
       mindmapRoot: {
         label: cleanTitle.slice(0, 46),
@@ -299,11 +338,19 @@ export function buildRichSubjectNote(params: {
     };
   }
 
-  // Topik Kalkulus (Limit, Turunan, Integral)
-  if (lower.includes("kalkulus") || lower.includes("limit") || lower.includes("turunan") || lower.includes("integral")) {
+  // 2. Topik Kalkulus
+  if (
+    lower.includes("kalkulus") ||
+    lower.includes("limit") ||
+    lower.includes("turunan") ||
+    lower.includes("integral")
+  ) {
     return {
       id,
-      title: cleanTitle.toLowerCase() === "kalkulus" ? "Kalkulus: Limit, Turunan & Integral" : cleanTitle,
+      title:
+        cleanTitle.toLowerCase() === "kalkulus"
+          ? "Kalkulus: Limit, Turunan & Integral"
+          : cleanTitle,
       kind,
       sourceInput: rawQuery || cleanTitle,
       snippet:
@@ -315,7 +362,7 @@ export function buildRichSubjectNote(params: {
         {
           title: "Bab 1 · Konsep Limit Fungsi",
           summary:
-            "Limit melihat nilai yang didekati f(x) saat x mendekati suatu titik c, meskipun di titik c fungsinya mungkin tak terdefinisi.",
+            "Limit melihat nilai yang didekati f(x) saat x mendekati titik c, meskipun di titik c fungsinya mungkin tak terdefinisi.",
           points: [
             "Notasi: lim(x → c) f(x) = L artinya nilai f(x) mendekati L saat x mendekati c dari kiri maupun kanan.",
             "Jika limit kiri ≠ limit kanan, maka nilai limit di titik tersebut tidak ada.",
@@ -329,7 +376,7 @@ export function buildRichSubjectNote(params: {
           points: [
             "Aturan pangkat: jika f(x) = xⁿ, maka f'(x) = n · xⁿ⁻¹.",
             "Contoh: untuk f(x) = x³, turunannya f'(x) = 3x²; pada x = 2 nilainya 3(2)² = 12.",
-            "Dalam gerak, turunan posisi s(t) terhadap waktu adalah kecepatan v(t), dan turunan kecepatan adalah percepatan a(t).",
+            "Dalam gerak lurus, turunan posisi s(t) adalah kecepatan v(t), dan turunan kecepatan adalah percepatan a(t).",
           ],
         },
         {
@@ -385,8 +432,13 @@ export function buildRichSubjectNote(params: {
     };
   }
 
-  // Topik Matematika Diskrit
-  if (lower.includes("diskrit") || lower.includes("himpunan") || lower.includes("graf") || lower.includes("kombinatorika")) {
+  // 3. Topik Matematika Diskrit
+  if (
+    lower.includes("diskrit") ||
+    lower.includes("himpunan") ||
+    lower.includes("graf") ||
+    lower.includes("kombinatorika")
+  ) {
     return {
       id,
       title: cleanTitle,
@@ -460,74 +512,155 @@ export function buildRichSubjectNote(params: {
     };
   }
 
-  // Fallback tematik terstruktur untuk topik umum lainnya
+  // 4. Topik Algoritma & Pemrograman / Struktur Data
+  if (
+    lower.includes("algoritma") ||
+    lower.includes("struktur data") ||
+    lower.includes("pemrograman") ||
+    lower.includes("array") ||
+    lower.includes("kompleksitas")
+  ) {
+    return {
+      id,
+      title: cleanTitle,
+      kind,
+      sourceInput: rawQuery || cleanTitle,
+      snippet:
+        "Mempelajari cara menyusun langkah penyelesaian masalah yang efisien, memilih struktur data yang tepat, serta menganalisis kompleksitas waktu O(n).",
+      createdAt: new Date().toISOString(),
+      chapterCount: 3,
+      chaptersDone: 0,
+      chapters: [
+        {
+          title: "Bab 1 · Logika Algoritma & Efisiensi Big-O",
+          summary:
+            "Algoritma adalah urutan langkah logis yang terbatas untuk mengubah input menjadi output yang benar dan efisien.",
+          points: [
+            "O(1) berarti waktu akses konstan; O(log n) membelah ruang pencarian seperti Binary Search.",
+            "O(n) memeriksa elemen satu per satu; O(n²) muncul pada perulangan bersarang.",
+            "Pemilihan algoritma yang efisien krusial saat ukuran data tumbuh besar.",
+          ],
+        },
+        {
+          title: "Bab 2 · Struktur Data Dasar (Array, Stack, Queue, Hash Map)",
+          summary:
+            "Setiap struktur data memiliki pola akses dan biaya operasi sisip/cari yang berbeda.",
+          points: [
+            "Array: akses indeks cepat O(1), tetapi sisip di tengah membutuhkan pergeseran O(n).",
+            "Stack (LIFO): elemen terakhir masuk keluar lebih dulu; Queue (FIFO): elemen pertama masuk keluar lebih dulu.",
+            "Hash Map: pemetaan kunci-nilai dengan pencarian rata-rata O(1).",
+          ],
+        },
+        {
+          title: "Bab 3 · Pola Penyelesaian Masalah & Kasus Uji",
+          summary:
+            "Menguji algoritma pada kasus normal maupun kasus batas (edge cases) agar bebas bug.",
+          points: [
+            "Selalu uji kondisi batas seperti input kosong, satu elemen, atau data duplikat.",
+            "Pecah masalah besar menjadi sub-masalah kecil agar mudah diuji.",
+          ],
+        },
+      ],
+      flashcards: [
+        {
+          id: `${id}-fc-1`,
+          front: "Apa perbedaan prinsip kerja Stack dan Queue?",
+          back: "Stack bekerja dengan prinsip LIFO (Last In, First Out), sedangkan Queue bekerja dengan FIFO (First In, First Out).",
+        },
+        {
+          id: `${id}-fc-2`,
+          front: "Mengapa Binary Search memiliki kompleksitas O(log n)?",
+          back: "Karena pada setiap langkah pencarian, ruang data yang diperiksa dibagi dua.",
+        },
+      ],
+      quiz: [
+        {
+          question: "Struktur data yang paling cocok untuk fitur Undo (batalkan tindakan terakhir) adalah...",
+          options: ["Queue", "Stack", "Array statis", "Graf tak berarah"],
+          correctIndex: 1,
+          explanation: "Stack mengikuti prinsip LIFO sehingga tindakan terakhir dapat diambil kembali terlebih dahulu.",
+        },
+      ],
+      mindmapRoot: {
+        label: cleanTitle.slice(0, 46),
+        branches: [
+          { title: "Kompleksitas Big-O", detail: "O(1), O(log n), O(n), O(n²)" },
+          { title: "Struktur Data", detail: "Array, Stack, Queue & Hash Map" },
+          { title: "Pengujian", detail: "Kasus batas & verifikasi alur" },
+        ],
+      },
+    };
+  }
+
+  // 5. Fallback terstruktur non-repetitif untuk topik umum lainnya
   return {
     id,
     title: cleanTitle,
     kind,
     sourceInput: rawQuery || cleanTitle,
-    snippet: `Ringkasan inti ${cleanTitle}: pengertian dasar, komponen atau prinsip utama, serta langkah penerapan yang mudah dipahami.`,
+    snippet: `Ringkasan terstruktur ${cleanTitle}: definisi & ruang lingkup, prinsip kerja serta contoh penerapan, dan rangkuman poin kunci.`,
     createdAt: new Date().toISOString(),
     chapterCount: 3,
     chaptersDone: 0,
     chapters: [
       {
-        title: `Bab 1 · Pengertian & Konsep Dasar ${cleanTitle}`,
-        summary: `${cleanTitle} berfokus pada pemahaman ide pokok, istilah utama, dan tujuan penerapannya secara runtut.`,
+        title: `Bab 1 · Konsep Inti & Ruang Lingkup ${cleanTitle}`,
+        summary: `Mengenali definisi dasar, komponen pembentuk, dan peran utama ${cleanTitle} dalam konteks penerapannya.`,
         points: [
-          `Definisi inti: memahami apa itu ${cleanTitle} dan mengapa konsep ini penting.`,
-          "Istilah kunci: membedakan istilah utama agar tidak tertukar saat membaca atau mengerjakan soal.",
-          "Gambaran umum: melihat keterkaitan antarbagian sebelum masuk ke detail.",
+          `Pengertian pokok: menjelaskan batasan dan tujuan utama dari ${cleanTitle}.`,
+          "Komponen & istilah kunci: membedakan elemen utama agar tidak tertukar saat menganalisis kasus.",
+          "Keterkaitan konsep: melihat bagaimana setiap bagian saling memengaruhi dalam satu sistem.",
         ],
       },
       {
-        title: `Bab 2 · Prinsip Kerja & Langkah Penerapan`,
-        summary: `Menjelaskan bagaimana konsep pada ${cleanTitle} bekerja dalam praktik serta langkah-langkah menyelesaikannya.`,
+        title: `Bab 2 · Mekanisme Kerja & Contoh Penerapan`,
+        summary: `Menguraikan alur kerja, aturan atau syarat yang berlaku, serta contoh konkret penerapan ${cleanTitle}.`,
         points: [
-          "Langkah 1: identifikasi kondisi awal, data, atau informasi utama yang diketahui.",
-          "Langkah 2: terapkan aturan, rumus, atau alur kerja yang sesuai dengan konteks.",
-          "Langkah 3: periksa kembali hasil akhir agar sesuai dengan syarat yang diminta.",
+          "Tahap identifikasi: menentukan data awal, variabel, atau kondisi yang diketahui.",
+          "Tahap eksekusi: menerapkan aturan atau prosedur yang sesuai secara berurutan.",
+          "Contoh kasus: membandingkan hasil sebelum dan sesudah prinsip diterapkan.",
         ],
       },
       {
-        title: `Bab 3 · Kesalahan Umum & Ringkasan Inti`,
-        summary: `Merangkum hal yang perlu dihindari dan poin utama yang paling sering keluar dalam latihan atau ujian.`,
+        title: `Bab 3 · Kesalahan Umum & Rangkuman Evaluasi`,
+        summary: `Merangkum titik rawan kesalahan serta poin penting yang perlu dikuasai sebelum mengerjakan evaluasi.`,
         points: [
-          "Hindari melompati langkah dasar atau mengabaikan syarat/satuan.",
-          "Uji pemahaman secara berkala lewat soal latihan dan kartu hafalan.",
+          "Periksa kembali syarat berlakunya aturan sebelum menarik kesimpulan.",
+          "Gunakan fitur Kuis dan Kartu Hafalan untuk menguji daya ingat aktif.",
         ],
       },
     ],
     flashcards: [
       {
         id: `${id}-fc-1`,
-        front: `Apa fokus utama pada Bab 1 ${cleanTitle}?`,
-        back: `Memahami definisi dasar, istilah penting, dan gambaran umum ${cleanTitle} sebelum masuk ke penerapan.`,
+        front: `Apa tujuan utama mempelajari ${cleanTitle}?`,
+        back: `Memahami konsep dasar, komponen utama, serta cara menerapkan prinsip ${cleanTitle} secara tepat pada kasus nyata.`,
       },
       {
         id: `${id}-fc-2`,
-        front: `Bagaimana alur penerapan yang rapi untuk ${cleanTitle}?`,
-        back: "Identifikasi informasi awal, terapkan prinsip/aturan yang tepat, lalu periksa kembali hasil akhirnya.",
+        front: `Apa dua tahap awal dalam menerapkan ${cleanTitle}?`,
+        back: "1) Mengidentifikasi kondisi/data awal yang diketahui, lalu 2) menerapkan aturan atau prosedur yang sesuai.",
       },
     ],
     quiz: [
       {
-        question: `Langkah paling efektif setelah memahami konsep dasar ${cleanTitle} adalah...`,
+        question: `Hal pertama yang perlu dilakukan sebelum menerapkan aturan pada ${cleanTitle} adalah...`,
         options: [
-          "Menerapkannya pada contoh/latihan dan memeriksa kembali hasilnya",
-          "Melewatkan latihan sama sekali",
-          "Menghafal istilah tanpa memahami maknanya",
-          "Mengabaikan langkah-langkah penyelesaian",
+          "Mengidentifikasi kondisi awal, syarat, dan komponen yang terlibat",
+          "Langsung menebak hasil akhir tanpa memeriksa syarat",
+          "Mengabaikan perbedaan istilah dasar",
+          "Melewatkan pengecekan hasil",
         ],
         correctIndex: 0,
-        explanation: "Menerapkan konsep pada latihan dan memeriksa hasil memperkuat pemahaman serta ketelitian.",
+        explanation:
+          "Mengidentifikasi syarat dan data awal mencegah kesalahan penerapan aturan pada tahap berikutnya.",
       },
     ],
     mindmapRoot: {
       label: cleanTitle.slice(0, 46),
       branches: [
-        { title: "Konsep Dasar", detail: `Definisi & istilah inti ${cleanTitle}` },
-        { title: "Penerapan", detail: "Langkah kerja & contoh kasus" },
+        { title: "Konsep & Istilah", detail: `Definisi & komponen utama ${cleanTitle}` },
+        { title: "Mekanisme & Contoh", detail: "Alur penerapan & studi kasus" },
         { title: "Evaluasi", detail: "Kesalahan umum & latihan" },
       ],
     },
