@@ -1,5 +1,49 @@
 import Link from "next/link";
-import { getDashboardData } from "@/app/(app)/dashboard/data";
+
+type NoteKind = "text" | "pdf" | "slide" | "audio" | "youtube";
+
+type Note = {
+  id: string;
+  title: string;
+  kind: NoteKind;
+  snippet: string;
+  createdAt: string;
+  chapterCount: number;
+  chaptersDone: number;
+};
+
+const NOTES: Note[] = [
+  {
+    id: "n1",
+    title: "Hukum Newton dan penerapannya",
+    kind: "text",
+    snippet:
+      "Hukum pertama menyatakan benda tetap diam atau bergerak lurus beraturan selama resultan gaya nol. Kita mulai dari contoh sehari-hari, lalu ke rumusnya.",
+    createdAt: "2026-11-20T03:00:00Z",
+    chapterCount: 4,
+    chaptersDone: 2,
+  },
+  {
+    id: "n2",
+    title: "Sel dan organel",
+    kind: "pdf",
+    snippet:
+      "Sel adalah satuan terkecil makhluk hidup. Organel seperti mitokondria dan kloroplas punya tugas masing-masing di dalam sel.",
+    createdAt: "2026-11-19T03:00:00Z",
+    chapterCount: 5,
+    chaptersDone: 5,
+  },
+  {
+    id: "n3",
+    title: "Rekaman kelas sejarah",
+    kind: "audio",
+    snippet:
+      "Latar belakang pergerakan nasional, tokoh-tokohnya, dan urutan peristiwa penting dari awal abad ke-20.",
+    createdAt: "2026-11-17T03:00:00Z",
+    chapterCount: 6,
+    chaptersDone: 1,
+  },
+];
 
 export default async function LessonDetailPage({
   params,
@@ -7,8 +51,7 @@ export default async function LessonDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const data = await getDashboardData();
-  const note = data.notes.find((n) => n.id === id) ?? data.notes[0];
+  const note = NOTES.find((n) => n.id === id) ?? NOTES[0];
 
   return (
     <main className="mx-auto max-w-[780px] space-y-5 px-4 py-10">
