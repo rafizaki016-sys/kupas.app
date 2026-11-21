@@ -3,7 +3,15 @@
 import { Suspense, useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, FileText, Headphones, Link2, Sparkles } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowRight,
+  CheckCircle2,
+  FileText,
+  Headphones,
+  Link2,
+  Sparkles,
+} from "lucide-react";
 import {
   buildComprehensiveNoteFromSource,
   cleanTopicFromInput,
@@ -32,6 +40,10 @@ function NewLessonContent() {
   const [title, setTitle] = useState<string>(cleanedInitialQuery);
   const [content, setContent] = useState<string>(initialQuery);
   const [creating, setCreating] = useState<boolean>(false);
+  const [statusMessage, setStatusMessage] = useState<{
+    type: "info" | "warning" | "error";
+    text: string;
+  } | null>(null);
 
   const triggeredQueryRef = useRef<string | null>(null);
   const isSubmittingRef = useRef<boolean>(false);
@@ -47,12 +59,19 @@ function NewLessonContent() {
   async function handleCreate(rawQuery: string, rawSource: SourceMode, customTitle?: string) {
     if (isSubmittingRef.current) return;
     const textValue = rawQuery.trim() || content.trim() || title.trim();
-    if (!textValue) return;
+    if (!textValue) {
+      setStatusMessage({
+        type: "error",
+        text: "Isi topik atau tempel catatan terlebih dahulu sebelum membuat materi.",
+      });
+      return;
+    }
 
     const cleanTitle = cleanTopicFromInput((customTitle ?? title).trim() || textValue);
 
     isSubmittingRef.current = true;
     setCreating(true);
+    setStatusMessage(null);
 
     try {
       const res = await fetch("/api/generate-lesson", {
@@ -76,9 +95,20 @@ function NewLessonContent() {
           router.push(`/lessons/${finalNote.id}`);
           return;
         }
+      } else {
+        const errData = (await res.json().catch(() => ({}))) as { error?: string };
+        setStatusMessage({
+          type: "warning",
+          text:
+            errData.error ||
+            "Layanan penyusun otomatis sedang tidak merespons — menggunakan penyusun materi lokal.",
+        });
       }
     } catch {
-      // fallback lokal jika endpoint tidak tersedia
+      setStatusMessage({
+        type: "warning",
+        text: "Koneksi ke server terputus — materi disusun menggunakan penyusun lokal.",
+      });
     }
 
     const fallbackNote = buildComprehensiveNoteFromSource({
@@ -113,34 +143,40 @@ function NewLessonContent() {
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     const combined = content.trim() || title.trim();
-    if (!combined) return;
+    if (!combined) {
+      setStatusMessage({
+        type: "error",
+        text: "Isi judul topik atau tempel isi materi terlebih dahulu.",
+      });
+      return;
+    }
     void handleCreate(combined, source, title.trim() || combined);
   }
 
   const kindMeta: Record<NoteKind, { label: string; hint: string; placeholder: string }> = {
     pdf: {
-      label: "Unggah",
-      hint: "Pilih berkas (PDF, Word, Slide, Excel, Teks, Gambar, Audio, Video) atau tulis topik/materi lengkap.",
-      placeholder: "Contoh: Matematika Diskrit — himpunan, relasi, dan graf",
+      label: "Teks & Berkas",
+      hint: "Berkas .txt, .md, dan .csv dibaca isinya secara otomatis. Untuk PDF/Word/Slide, tempel ringkasan teksnya di kolom bawah agar diurai tuntas.",
+      placeholder: "Contoh: Kalkulus — limit, turunan, dan integral",
     },
     audio: {
-      label: "Rekam",
-      hint: "Masukkan topik atau transkrip/ringkasan rekaman kelas agar diuraikan menjadi bab dan latihan.",
+      label: "Transkrip / Rekaman",
+      hint: "Tempel transkrip atau poin-poin penting dari rekaman kelas agar disusun menjadi bab, flashcard, dan kuis.",
       placeholder: "Contoh: Ringkasan rekaman kuliah struktur data",
     },
     youtube: {
-      label: "YouTube / Tautan",
-      hint: "Tempel tautan YouTube atau artikel web — judul topik akan dirapikan otomatis.",
+      label: "Tautan / Topik Video",
+      hint: "Tempel tautan YouTube/artikel atau tulis ringkasan poin video agar disusun menjadi pelajaran.",
       placeholder: "Tempel tautan YouTube atau artikel di sini...",
     },
     text: {
-      label: "Unggah",
-      hint: "Ketik topik atau materi pelajaran.",
+      label: "Teks & Berkas",
+      hint: "Ketik topik atau tempel catatan pelajaran.",
       placeholder: "Ketik topik pelajaran...",
     },
     slide: {
-      label: "Unggah",
-      hint: "Masukkan materi slide.",
+      label: "Teks & Berkas",
+      hint: "Tempel materi slide.",
       placeholder: "Ketik materi slide...",
     },
   };
@@ -189,11 +225,31 @@ function NewLessonContent() {
             <p className="mt-1 text-sm text-[#5d6578]">{kindMeta[activeKind].hint}</p>
           </div>
 
+          {statusMessage && (
+            <div
+              role="status"
+              className={`flex items-start gap-2.5 rounded-xl border-[1.5px] p-3.5 text-xs font-semibold ${
+                statusMessage.type === "error"
+                  ? "border-rose-700 bg-rose-50 text-rose-950"
+                  : statusMessage.type === "warning"
+                    ? "border-amber-700 bg-amber-50 text-amber-950"
+                    : "border-[#1e4fd8] bg-[#dfe8ff] text-[#1d2433]"
+              }`}
+            >
+              {statusMessage.type === "info" ? (
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#1e4fd8]" aria-hidden="true" />
+              ) : (
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              )}
+              <span>{statusMessage.text}</span>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-2">
             {[
-              { id: "upload" as SourceMode, label: "Unggah", icon: FileText },
-              { id: "record" as SourceMode, label: "Rekam", icon: Headphones },
-              { id: "link" as SourceMode, label: "YouTube / Tautan", icon: Link2 },
+              { id: "upload" as SourceMode, label: "Teks & Berkas", icon: FileText },
+              { id: "record" as SourceMode, label: "Transkrip / Rekaman", icon: Headphones },
+              { id: "link" as SourceMode, label: "Tautan / Video", icon: Link2 },
             ].map((tab) => {
               const Icon = tab.icon;
               const selected = source === tab.id;
@@ -201,7 +257,10 @@ function NewLessonContent() {
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setSource(tab.id)}
+                  onClick={() => {
+                    setSource(tab.id);
+                    setStatusMessage(null);
+                  }}
                   className={`inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-[#1d2433] px-3.5 py-1.5 text-xs font-bold transition ${
                     selected
                       ? "bg-[#1d2433] text-[#faf6ee]"
@@ -218,12 +277,12 @@ function NewLessonContent() {
           {source === "upload" && (
             <div className="rounded-xl border-[1.5px] border-dashed border-[#1d2433] bg-[#faf6ee] p-4">
               <label htmlFor="file-upload" className="block text-xs font-bold text-[#1d2433]">
-                Pilih berkas (PDF, Word, Slide, Excel, Teks, Gambar, Audio, Video)
+                Unggah berkas teks (.txt, .md, .csv, .json) untuk pembacaan otomatis
               </label>
               <input
                 id="file-upload"
                 type="file"
-                accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.csv,.json,image/*,audio/*,video/*"
+                accept=".txt,.md,.markdown,.csv,.json,.pdf,.doc,.docx,.ppt,.pptx"
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
@@ -239,14 +298,25 @@ function NewLessonContent() {
                       const textBody = await file.text();
                       if (textBody.trim()) {
                         setContent(textBody.slice(0, 8000));
+                        setStatusMessage({
+                          type: "info",
+                          text: `Isi berkas "${file.name}" (${Math.min(
+                            textBody.trim().length,
+                            8000,
+                          )} karakter) berhasil dimuat.`,
+                        });
                         return;
                       }
                     } catch {
-                      // fallback ke nama topik
+                      // lanjut ke pesan peringatan di bawah
                     }
                   }
 
                   setContent((prev) => prev || cleanName);
+                  setStatusMessage({
+                    type: "warning",
+                    text: `Berkas "${file.name}" berformat biner sehingga isinya belum diekstraksi otomatis. Tempel teks atau ringkasan dari berkas tersebut ke kolom isi materi di bawah agar pembahasannya lengkap.`,
+                  });
                 }}
                 className="mt-2 block w-full text-xs text-[#5d6578]"
               />
@@ -270,8 +340,8 @@ function NewLessonContent() {
           <div>
             <label htmlFor="lesson-content" className="block text-xs font-bold uppercase text-[#1d2433]">
               {source === "link"
-                ? "Tautan YouTube / Artikel atau Topik"
-                : "Isi Materi / Catatan / Transkrip Singkat"}
+                ? "Tautan YouTube / Artikel atau Poin Materi"
+                : "Isi Materi / Catatan / Transkrip"}
             </label>
             <textarea
               id="lesson-content"
@@ -286,8 +356,8 @@ function NewLessonContent() {
               }}
               placeholder={
                 source === "link"
-                  ? "Tempel tautan YouTube atau artikel web di sini..."
-                  : "Tempel catatan, ringkasan bab, isi dokumen, atau topik di sini..."
+                  ? "Tempel tautan YouTube/artikel atau salin ringkasan poin utamanya di sini..."
+                  : "Tempel catatan, paragraf materi, atau transkrip di sini..."
               }
               className="mt-1.5 w-full rounded-xl border-[1.5px] border-[#1d2433] bg-white p-4 text-sm text-[#1d2433] focus:outline-none focus:ring-2 focus:ring-[#1e4fd8]"
             />
