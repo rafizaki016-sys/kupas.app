@@ -1,323 +1,454 @@
 "use client";
 
-import { useId, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
+  ArrowUp,
+  BookOpen,
   FileText,
-  Headphones,
+  HelpCircle,
+  History,
+  Home,
   Layers,
-  Link2,
+  MessageSquare,
   Mic,
-  Presentation,
+  PlayCircle,
+  Sparkles,
   Upload,
-  Video,
 } from "lucide-react";
+import {
+  DEFAULT_NOTES,
+  readStoredNotes,
+  type StudyNote,
+} from "@/lib/kupas-store";
 
-type NoteKind = "text" | "pdf" | "slide" | "audio" | "youtube";
+type HubTab = "beranda" | "catatan" | "kartu" | "kuis" | "tanya";
 
-type Note = {
-  id: string;
-  title: string;
-  kind: NoteKind;
-  snippet: string;
-  createdAt: string;
-  chapterCount: number;
-  chaptersDone: number;
-};
-
-const INITIAL_NOTES: Note[] = [
-  {
-    id: "n1",
-    title: "Hukum Newton dan penerapannya",
-    kind: "text",
-    snippet:
-      "Hukum pertama menyatakan benda tetap diam atau bergerak lurus beraturan selama resultan gaya nol. Kita mulai dari contoh sehari-hari, lalu ke rumusnya.",
-    createdAt: "2026-11-20T03:00:00Z",
-    chapterCount: 4,
-    chaptersDone: 2,
-  },
-  {
-    id: "n2",
-    title: "Sel dan organel",
-    kind: "pdf",
-    snippet:
-      "Sel adalah satuan terkecil makhluk hidup. Organel seperti mitokondria dan kloroplas punya tugas masing-masing di dalam sel.",
-    createdAt: "2026-11-19T03:00:00Z",
-    chapterCount: 5,
-    chaptersDone: 5,
-  },
-  {
-    id: "n3",
-    title: "Rekaman kelas sejarah",
-    kind: "audio",
-    snippet:
-      "Latar belakang pergerakan nasional, tokoh-tokohnya, dan urutan peristiwa penting dari awal abad ke-20.",
-    createdAt: "2026-11-17T03:00:00Z",
-    chapterCount: 6,
-    chaptersDone: 1,
-  },
-];
-
-const KIND_LABEL: Record<NoteKind, string> = {
-  text: "Teks",
-  pdf: "PDF",
-  slide: "Slide",
-  audio: "Audio",
-  youtube: "YouTube",
-};
-
-const FILTERS: { value: "all" | NoteKind; label: string }[] = [
-  { value: "all", label: "Semua" },
-  { value: "pdf", label: "Dokumen" },
-  { value: "slide", label: "Slide" },
-  { value: "audio", label: "Audio" },
-  { value: "youtube", label: "YouTube" },
-  { value: "text", label: "Teks" },
-];
-
-function KindIcon({ kind }: { kind: NoteKind }) {
-  switch (kind) {
-    case "pdf":
-      return <FileText className="h-3.5 w-3.5 text-[#1e4fd8]" aria-hidden="true" />;
-    case "slide":
-      return <Presentation className="h-3.5 w-3.5 text-[#1e4fd8]" aria-hidden="true" />;
-    case "audio":
-      return <Headphones className="h-3.5 w-3.5 text-[#1e4fd8]" aria-hidden="true" />;
-    case "youtube":
-      return <Video className="h-3.5 w-3.5 text-[#1e4fd8]" aria-hidden="true" />;
-    default:
-      return <FileText className="h-3.5 w-3.5 text-[#1e4fd8]" aria-hidden="true" />;
-  }
-}
-
-function formatDate(iso: string) {
-  return new Intl.DateTimeFormat("id-ID", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "Asia/Jakarta",
-  }).format(new Date(iso));
-}
-
-export default function DashboardPage() {
+export default function DashboardHubPage() {
   const router = useRouter();
-  const promptId = useId();
-  const [text, setText] = useState("");
-  const [filter, setFilter] = useState<"all" | NoteKind>("all");
+  const [notes, setNotes] = useState<StudyNote[]>(DEFAULT_NOTES);
+  const [activeTab, setActiveTab] = useState<HubTab>("beranda");
+  const [prompt, setPrompt] = useState<string>("");
 
-  const dueCards = 12;
-  const continueNote = INITIAL_NOTES[0];
+  // Flashcard quick practice state
+  const [cardIdx, setCardIdx] = useState<number>(0);
+  const [flipped, setFlipped] = useState<boolean>(false);
 
-  const shownNotes = useMemo(
-    () => (filter === "all" ? INITIAL_NOTES : INITIAL_NOTES.filter((n) => n.kind === filter)),
-    [filter]
-  );
+  // Quiz quick practice state
+  const [quizIdx, setQuizIdx] = useState<number>(0);
+  const [chosenOpt, setChosenOpt] = useState<number | null>(null);
 
-  function go(params: Record<string, string>) {
-    const qs = new URLSearchParams(params).toString();
-    router.push(qs ? `/lessons/new?${qs}` : "/lessons/new");
-  }
+  // Ask / Tanya state
+  const [askInput, setAskInput] = useState<string>("");
+  const [chatLog, setChatLog] = useState<{ role: "user" | "assistant"; text: string }[]>([
+    {
+      role: "assistant",
+      text: "Halo! Pilih catatanmu atau tanya topik apa saja yang sedang kamu pelajari di Kupas.",
+    },
+  ]);
 
-  function onSubmit(e: FormEvent) {
+  useEffect(() => {
+    setNotes(readStoredNotes());
+  }, []);
+
+  const latestNote = notes[0] ?? DEFAULT_NOTES[0];
+
+  const allFlashcards = useMemo(() => {
+    const list = notes.flatMap((n) => n.flashcards);
+    return list.length > 0 ? list : DEFAULT_NOTES[0].flashcards;
+  }, [notes]);
+
+  const allQuizzes = useMemo(() => {
+    const list = notes.flatMap((n) => n.quiz);
+    return list.length > 0 ? list : DEFAULT_NOTES[0].quiz;
+  }, [notes]);
+
+  const activeCard = allFlashcards[cardIdx % allFlashcards.length];
+  const activeQuiz = allQuizzes[quizIdx % allQuizzes.length];
+
+  function handleStartFromPrompt(e: FormEvent) {
     e.preventDefault();
-    const value = text.trim();
-    if (!value) return;
-    go({ source: "text", q: value.slice(0, 2000) });
+    const q = prompt.trim();
+    if (!q) return;
+    router.push(`/lessons/new?source=upload&q=${encodeURIComponent(q)}`);
   }
+
+  function handleSourceQuickAction(source: "record" | "upload" | "link") {
+    const q = prompt.trim();
+    if (q) {
+      router.push(`/lessons/new?source=${source}&q=${encodeURIComponent(q)}`);
+    } else {
+      router.push(`/lessons/new?source=${source}`);
+    }
+  }
+
+  function handleAskSubmit(e: FormEvent) {
+    e.preventDefault();
+    const q = askInput.trim();
+    if (!q) return;
+    setChatLog((prev) => [
+      ...prev,
+      { role: "user", text: q },
+      {
+        role: "assistant",
+        text: `Untuk topik "${q}", kamu bisa mulai dari materi "${latestNote.title}" lalu menguji pemahaman lewat Kartu atau Kuis.`,
+      },
+    ]);
+    setAskInput("");
+  }
+
+  const sidebarItems: { key: HubTab; label: string; icon: typeof Home }[] = [
+    { key: "beranda", label: "Beranda", icon: Home },
+    { key: "catatan", label: "Catatan", icon: FileText },
+    { key: "kartu", label: "Kartu", icon: Layers },
+    { key: "kuis", label: "Kuis", icon: HelpCircle },
+    { key: "tanya", label: "Tanya", icon: MessageSquare },
+  ];
 
   return (
-    <div className="min-h-screen bg-[#faf6ee] text-[#1d2433]">
-      <main className="mx-auto max-w-[1100px] px-4 pb-16 pt-2 sm:px-9">
-        <h1 className="mb-4 mt-6 text-3xl font-extrabold leading-tight tracking-tight sm:mt-8 sm:text-[40px]">
-          Apa yang ingin kamu pelajari?
-        </h1>
+    <div
+      className="min-h-screen text-[#1d2433]"
+      style={{
+        backgroundColor: "#faf6ee",
+        backgroundImage: "radial-gradient(#d8d0c0 1.25px, transparent 1.25px)",
+        backgroundSize: "18px 18px",
+      }}
+    >
+      {/* Top Bar */}
+      <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b-[1.5px] border-[#1d2433] bg-[#fffdf8] px-4 sm:px-6">
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setActiveTab("beranda")}
+            className="inline-flex items-center gap-2 font-extrabold tracking-tight text-[#1d2433]"
+          >
+            <span className="grid h-8 w-8 place-items-center rounded-lg border-[1.5px] border-[#1d2433] bg-[#faf6ee]">
+              <BookOpen className="h-4 w-4 text-[#1d2433]" aria-hidden="true" />
+            </span>
+            <span className="text-base">Kupas</span>
+          </button>
 
-        <form
-          onSubmit={onSubmit}
-          className="rounded-xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] p-4 shadow-[5px_5px_0_#1d2433] focus-within:outline focus-within:outline-[3px] focus-within:outline-offset-[3px] focus-within:outline-[#1e4fd8]"
+          <button
+            type="button"
+            aria-label="Riwayat belajar"
+            onClick={() => setActiveTab("catatan")}
+            className="grid h-8 w-8 place-items-center rounded-lg border border-[#d8d0c0] bg-white text-[#5d6578] transition hover:border-[#1d2433] hover:text-[#1d2433]"
+          >
+            <History className="h-4 w-4" aria-hidden="true" />
+          </button>
+
+          <span className="hidden text-xs font-semibold text-[#1d2433] sm:inline">
+            Beranda
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-[#1d2433] bg-white px-3 py-1 text-xs font-bold text-[#1d2433]">
+            <Sparkles className="h-3.5 w-3.5 text-[#1e4fd8]" aria-hidden="true" />
+            <span>5 hari</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-[#1d2433] bg-white px-3 py-1 text-xs font-bold text-[#1d2433]">
+            <Sparkles className="h-3.5 w-3.5 text-[#1e4fd8]" aria-hidden="true" />
+            <span>240 XP</span>
+          </span>
+          <span className="grid h-8 w-8 place-items-center rounded-full border-[1.5px] border-[#1d2433] bg-[#1e4fd8] text-xs font-extrabold text-white">
+            K
+          </span>
+        </div>
+      </header>
+
+      <div className="mx-auto flex max-w-[1320px]">
+        {/* Left Sidebar */}
+        <aside
+          aria-label="Navigasi utama"
+          className="hidden w-[84px] shrink-0 flex-col items-center gap-1.5 border-r-[1.5px] border-[#e6dece] bg-[#fffdf8]/80 py-5 md:flex"
         >
-          <label htmlFor={promptId} className="sr-only">
-            Tempel materi atau ketik topik
-          </label>
-          <textarea
-            id={promptId}
-            rows={2}
-            maxLength={2000}
-            value={text}
-            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value)}
-            placeholder="Tempel materi atau ketik topik, misalnya hukum Newton"
-            className="block min-h-[56px] w-full resize-y border-0 bg-transparent p-0 text-[17px] text-[#1d2433] placeholder-[#5d6578] focus:outline-none"
-          />
-          <div className="mt-2.5 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => go({ source: "record" })}
-              className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-[#1d2433] bg-white px-3.5 py-2 text-sm font-semibold text-[#1d2433] transition hover:bg-[#dfe8ff]"
-            >
-              <Mic className="h-4 w-4" aria-hidden="true" />
-              <span>Rekam</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => go({ source: "upload" })}
-              className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-[#1d2433] bg-white px-3.5 py-2 text-sm font-semibold text-[#1d2433] transition hover:bg-[#dfe8ff]"
-            >
-              <Upload className="h-4 w-4" aria-hidden="true" />
-              <span>Unggah</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => go({ source: "link" })}
-              className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-[#1d2433] bg-white px-3.5 py-2 text-sm font-semibold text-[#1d2433] transition hover:bg-[#dfe8ff]"
-            >
-              <Link2 className="h-4 w-4" aria-hidden="true" />
-              <span>Tautan</span>
-            </button>
-            <button
-              type="submit"
-              disabled={!text.trim()}
-              aria-label="Buat catatan dari teks ini"
-              className="ml-auto grid h-[46px] w-[46px] place-items-center rounded-[14px] border-[1.5px] border-[#1d2433] bg-[#1e4fd8] text-white shadow-[3px_3px_0_#1d2433] transition disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none"
-            >
-              <ArrowRight className="h-5 w-5" aria-hidden="true" />
-            </button>
-          </div>
-        </form>
+          {sidebarItems.map((item) => {
+            const Icon = item.icon;
+            const active = activeTab === item.key;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setActiveTab(item.key)}
+                className={`flex w-16 flex-col items-center justify-center gap-1 rounded-xl py-2.5 text-[11px] font-bold transition ${
+                  active
+                    ? "border-[1.5px] border-[#1d2433] bg-[#1a2234] text-white shadow-[2px_2px_0_#1d2433]"
+                    : "text-[#5d6578] hover:bg-[#dfe8ff]/60 hover:text-[#1d2433]"
+                }`}
+              >
+                <Icon className="h-4 w-4" aria-hidden="true" />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </aside>
 
-        <section aria-label="Hari ini" className="mt-4 grid gap-3 md:grid-cols-2">
-          <Link
-            href="/cards"
-            className="flex items-center gap-3.5 rounded-xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] p-4 shadow-[5px_5px_0_#1d2433] transition hover:-translate-x-[1px] hover:-translate-y-[1px] hover:bg-white hover:shadow-[6px_6px_0_#1d2433]"
-          >
-            <span className="grid h-[46px] w-[46px] flex-none place-items-center rounded-[13px] bg-[#dfe8ff] text-[#1e4fd8]">
-              <Layers className="h-5 w-5" aria-hidden="true" />
-            </span>
-            <span>
-              <b className="block text-sm font-bold text-[#1d2433]">
-                {dueCards} kartu perlu diulang
-              </b>
-              <small className="text-sm text-[#5d6578]">
-                Sekitar {Math.max(1, Math.round(dueCards / 2))} menit
-              </small>
-            </span>
-            <span className="ml-auto inline-flex items-center gap-1.5 whitespace-nowrap text-sm font-bold text-[#1e4fd8]">
-              <span>Mulai</span>
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </span>
-          </Link>
+        {/* Center Main Content */}
+        <main className="min-w-0 flex-1 px-4 py-8 sm:px-8 lg:px-12">
+          {activeTab === "beranda" && (
+            <div className="mx-auto max-w-[780px] space-y-6">
+              <h1 className="text-center text-2xl font-extrabold tracking-tight text-[#1d2433] sm:text-[34px]">
+                Mau belajar apa hari ini?
+              </h1>
 
-          <Link
-            href={`/lessons/${continueNote.id}`}
-            className="flex items-center gap-3.5 rounded-xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] p-4 shadow-[5px_5px_0_#1d2433] transition hover:-translate-x-[1px] hover:-translate-y-[1px] hover:bg-white hover:shadow-[6px_6px_0_#1d2433]"
-          >
-            <span className="grid h-[46px] w-[46px] flex-none place-items-center rounded-[13px] bg-[#dfe8ff] text-[#1e4fd8]">
-              <FileText className="h-5 w-5" aria-hidden="true" />
-            </span>
-            <span className="min-w-0">
-              <b className="block truncate text-sm font-bold text-[#1d2433]">
-                Lanjutkan: {continueNote.title}
-              </b>
-              <small className="text-sm text-[#5d6578]">
-                Bab {continueNote.chaptersDone} dari {continueNote.chapterCount}
-              </small>
-            </span>
-            <span className="ml-auto inline-flex items-center gap-1.5 whitespace-nowrap text-sm font-bold text-[#1e4fd8]">
-              <span>Buka</span>
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </span>
-          </Link>
-        </section>
+              <form
+                onSubmit={handleStartFromPrompt}
+                className="flex min-h-[168px] flex-col justify-between rounded-2xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] p-4 shadow-[5px_5px_0_#1d2433] sm:p-5"
+              >
+                <textarea
+                  rows={3}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (prompt.trim()) {
+                        router.push(`/lessons/new?source=upload&q=${encodeURIComponent(prompt.trim())}`);
+                      }
+                    }
+                  }}
+                  placeholder="Buat pelajaran dari materi kalkulus"
+                  className="w-full resize-none bg-transparent text-sm text-[#1d2433] placeholder:text-[#7c8494] focus:outline-none sm:text-[15px]"
+                />
 
-        <section aria-labelledby="notes-heading">
-          <h2
-            id="notes-heading"
-            className="mb-3.5 mt-9 text-2xl font-extrabold tracking-tight text-[#1d2433]"
-          >
-            Catatan
-          </h2>
-
-          <div role="group" aria-label="Filter jenis catatan" className="flex flex-wrap gap-2">
-            {FILTERS.map((f) => {
-              const active = filter === f.value;
-              return (
-                <button
-                  key={f.value}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => setFilter(f.value)}
-                  className={`rounded-full border-[1.5px] border-[#1d2433] px-4 py-2 text-sm font-semibold transition ${
-                    active
-                      ? "bg-[#1d2433] text-[#faf6ee]"
-                      : "bg-[#fffdf8] text-[#5d6578] hover:text-[#1d2433]"
-                  }`}
-                >
-                  {f.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {shownNotes.length === 0 ? (
-            <p
-              role="status"
-              className="mt-4 rounded-xl border-[1.5px] border-dashed border-[#1d2433] bg-[#fffdf8] p-5 text-sm text-[#5d6578]"
-            >
-              Tidak ada catatan dengan jenis ini.
-            </p>
-          ) : (
-            <ul className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-              {shownNotes.map((n) => {
-                const pct = n.chapterCount
-                  ? Math.round((n.chaptersDone / n.chapterCount) * 100)
-                  : 0;
-                return (
-                  <li key={n.id} className="min-w-0">
-                    <Link
-                      href={`/lessons/${n.id}`}
-                      className="block h-full overflow-hidden rounded-xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] shadow-[5px_5px_0_#1d2433] transition hover:-translate-x-[1px] hover:-translate-y-[1px] hover:shadow-[6px_6px_0_#1d2433]"
+                <div className="mt-4 flex items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSourceQuickAction("record")}
+                      className="inline-flex items-center gap-1.5 rounded-xl border-[1.5px] border-[#1d2433] bg-white px-3 py-1.5 text-xs font-bold text-[#1d2433] transition hover:bg-[#dfe8ff]"
                     >
-                      <div className="relative h-[150px] overflow-hidden bg-[#dfe8ff] px-4 pt-11">
-                        <span className="absolute left-3.5 top-3 inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-[#1d2433] bg-[#fffdf8] px-2.5 py-0.5 text-xs font-bold text-[#1d2433]">
-                          <KindIcon kind={n.kind} />
-                          <span>{KIND_LABEL[n.kind]}</span>
-                        </span>
-                        <p className="m-0 text-[13px] leading-relaxed text-[#5d6578]">
-                          {n.snippet}
-                        </p>
-                        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-[#dfe8ff] to-transparent" />
-                      </div>
+                      <Mic className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>Rekam</span>
+                    </button>
 
-                      <div className="p-4">
-                        <h3 className="m-0 break-words text-[17px] font-bold leading-snug tracking-tight text-[#1d2433]">
-                          {n.title}
-                        </h3>
-                        <p className="mt-1.5 text-sm text-[#5d6578]">
-                          Dibuat {formatDate(n.createdAt)} · {n.chapterCount} bab
-                        </p>
-                        <div
-                          role="progressbar"
-                          aria-label={`Kemajuan ${n.title}`}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                          aria-valuenow={pct}
-                          className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-[#e6dece]"
-                        >
+                    <button
+                      type="button"
+                      onClick={() => handleSourceQuickAction("upload")}
+                      className="inline-flex items-center gap-1.5 rounded-xl border-[1.5px] border-[#1d2433] bg-white px-3 py-1.5 text-xs font-bold text-[#1d2433] transition hover:bg-[#dfe8ff]"
+                    >
+                      <Upload className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>Unggah</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSourceQuickAction("link")}
+                      className="inline-flex items-center gap-1.5 rounded-xl border-[1.5px] border-[#1d2433] bg-white px-3 py-1.5 text-xs font-bold text-[#1d2433] transition hover:bg-[#dfe8ff]"
+                    >
+                      <PlayCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>YouTube</span>
+                    </button>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={!prompt.trim()}
+                    aria-label="Buat pelajaran"
+                    className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border-[1.5px] border-[#1d2433] bg-[#1e4fd8] text-white shadow-[2px_2px_0_#1d2433] transition hover:-translate-x-[1px] hover:-translate-y-[1px] disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none"
+                  >
+                    <ArrowUp className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                </div>
+              </form>
+
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] px-5 py-4 shadow-[5px_5px_0_#1d2433]">
+                <div className="flex min-w-0 items-center gap-3.5">
+                  <span className="h-7 w-7 shrink-0 rounded-full border-[3px] border-[#1e4fd8] border-t-[#dfe8ff]" />
+                  <span className="truncate text-sm font-extrabold text-[#1d2433] sm:text-base">
+                    {latestNote.title}
+                  </span>
+                </div>
+
+                <Link
+                  href={`/lessons/${latestNote.id}`}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border-[1.5px] border-[#1d2433] bg-[#1e4fd8] px-4 py-2 text-xs font-bold text-white shadow-[2px_2px_0_#1d2433] transition hover:-translate-x-[1px] hover:-translate-y-[1px]"
+                >
+                  <span>Lanjut belajar</span>
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </Link>
+              </div>
+
+              <section aria-labelledby="catatan-heading" className="space-y-3.5 pt-1">
+                <h2 id="catatan-heading" className="text-base font-extrabold text-[#1d2433]">
+                  Catatan
+                </h2>
+
+                <div className="grid gap-4 sm:grid-cols-3">
+                  {notes.slice(0, 3).map((item, idx) => {
+                    const total = Math.max(item.chapterCount || 0, item.chapters.length, 1);
+                    const pct = Math.min(100, Math.round((item.chaptersDone / total) * 100));
+                    const statusLabel =
+                      item.chaptersDone === 0
+                        ? "belum dimulai"
+                        : idx === 0
+                          ? "dibuka 3 hari lalu"
+                          : idx === 1
+                            ? "dibuka kemarin"
+                            : `${item.chaptersDone}/${total} bab selesai`;
+
+                    return (
+                      <Link
+                        key={item.id}
+                        href={`/lessons/${item.id}`}
+                        className="flex flex-col justify-between rounded-2xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] p-4 shadow-[4px_4px_0_#1d2433] transition hover:-translate-x-[1px] hover:-translate-y-[1px]"
+                      >
+                        <div>
+                          <h3 className="text-sm font-extrabold leading-snug text-[#1d2433]">
+                            {item.title}
+                          </h3>
+                          <p className="mt-1.5 text-[11px] text-[#6e7687]">
+                            {total} bab · {statusLabel}
+                          </p>
+                        </div>
+
+                        <div className="mt-5 h-2 w-full overflow-hidden rounded-full bg-[#e9e2d5]">
                           <div
-                            className="h-full bg-[#1e4fd8]"
+                            className="h-full rounded-full bg-[#1e4fd8]"
                             style={{ width: `${pct}%` }}
                           />
                         </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </section>
+            </div>
+          )}
+
+          {activeTab === "catatan" && (
+            <div className="mx-auto max-w-[820px] space-y-4">
+              <h1 className="text-2xl font-extrabold text-[#1d2433]">Semua Catatan</h1>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {notes.map((item) => {
+                  const total = Math.max(item.chapterCount || 0, item.chapters.length, 1);
+                  const pct = Math.min(100, Math.round((item.chaptersDone / total) * 100));
+                  return (
+                    <Link
+                      key={item.id}
+                      href={`/lessons/${item.id}`}
+                      className="rounded-2xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] p-4 shadow-[4px_4px_0_#1d2433] transition hover:-translate-x-[1px] hover:-translate-y-[1px]"
+                    >
+                      <h2 className="text-sm font-extrabold text-[#1d2433]">{item.title}</h2>
+                      <p className="mt-1 text-xs text-[#6e7687]">{item.snippet}</p>
+                      <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-[#e9e2d5]">
+                        <div className="h-full rounded-full bg-[#1e4fd8]" style={{ width: `${pct}%` }} />
                       </div>
                     </Link>
-                  </li>
-                );
-              })}
-            </ul>
+                  );
+                })}
+              </div>
+            </div>
           )}
-        </section>
-      </main>
+
+          {activeTab === "kartu" && activeCard && (
+            <div className="mx-auto max-w-[680px] space-y-4 rounded-2xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] p-6 shadow-[5px_5px_0_#1d2433]">
+              <h1 className="text-xl font-extrabold text-[#1d2433]">Kartu Hafalan</h1>
+              <button
+                type="button"
+                onClick={() => setFlipped((f) => !f)}
+                className="flex min-h-[180px] w-full flex-col items-center justify-center rounded-2xl border-[1.5px] border-[#1d2433] bg-[#faf6ee] p-6 text-center"
+              >
+                <span className="text-[11px] font-bold uppercase text-[#1e4fd8]">
+                  {flipped ? "Jawaban" : "Pertanyaan"}
+                </span>
+                <p className="mt-3 text-base font-bold text-[#1d2433]">
+                  {flipped ? activeCard.back : activeCard.front}
+                </p>
+              </button>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFlipped(false);
+                    setCardIdx((i) => i + 1);
+                  }}
+                  className="rounded-xl border-[1.5px] border-[#1d2433] bg-[#1e4fd8] px-4 py-2 text-xs font-bold text-white shadow-[3px_3px_0_#1d2433]"
+                >
+                  Kartu Berikutnya →
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "kuis" && activeQuiz && (
+            <div className="mx-auto max-w-[680px] space-y-4 rounded-2xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] p-6 shadow-[5px_5px_0_#1d2433]">
+              <h1 className="text-xl font-extrabold text-[#1d2433]">{activeQuiz.question}</h1>
+              <div className="space-y-2">
+                {activeQuiz.options.map((opt, idx) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setChosenOpt(idx)}
+                    className={`w-full rounded-xl border-[1.5px] px-4 py-2.5 text-left text-xs font-bold ${
+                      chosenOpt === idx
+                        ? idx === activeQuiz.correctIndex
+                          ? "border-emerald-700 bg-emerald-50 text-emerald-950"
+                          : "border-rose-700 bg-rose-50 text-rose-950"
+                        : "border-[#1d2433] bg-white text-[#1d2433] hover:bg-[#dfe8ff]"
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+              {chosenOpt !== null && (
+                <div className="flex items-center justify-between gap-3 rounded-xl bg-[#faf6ee] p-3 text-xs">
+                  <span className="text-[#5d6578]">{activeQuiz.explanation}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChosenOpt(null);
+                      setQuizIdx((i) => i + 1);
+                    }}
+                    className="shrink-0 rounded-lg border border-[#1d2433] bg-[#1e4fd8] px-3 py-1.5 font-bold text-white"
+                  >
+                    Lanjut
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === "tanya" && (
+            <div className="mx-auto max-w-[680px] space-y-4 rounded-2xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] p-6 shadow-[5px_5px_0_#1d2433]">
+              <h1 className="text-xl font-extrabold text-[#1d2433]">Tanya Kupas</h1>
+              <div className="space-y-2.5 text-xs">
+                {chatLog.map((m, idx) => (
+                  <div
+                    key={idx}
+                    className={`rounded-xl border p-3 ${
+                      m.role === "user"
+                        ? "ml-8 border-[#1d2433] bg-[#dfe8ff]"
+                        : "mr-8 border-[#e6dece] bg-[#faf6ee]"
+                    }`}
+                  >
+                    {m.text}
+                  </div>
+                ))}
+              </div>
+              <form onSubmit={handleAskSubmit} className="flex gap-2">
+                <input
+                  type="text"
+                  value={askInput}
+                  onChange={(e) => setAskInput(e.target.value)}
+                  placeholder="Tanya materi pelajaran..."
+                  className="min-w-0 flex-1 rounded-xl border-[1.5px] border-[#1d2433] bg-white px-3.5 py-2 text-xs"
+                />
+                <button
+                  type="submit"
+                  className="rounded-xl border-[1.5px] border-[#1d2433] bg-[#1e4fd8] px-4 py-2 text-xs font-bold text-white"
+                >
+                  Kirim
+                </button>
+              </form>
+            </div>
+          )}
+        </main>
+      </div>
     </div>
   );
 }
