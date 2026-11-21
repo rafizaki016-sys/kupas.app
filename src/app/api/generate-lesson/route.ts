@@ -12,185 +12,182 @@ type GenerateBody = {
   source?: string;
 };
 
-function buildTopicSpecificNote(
-  rawQuery: string,
-  source?: string,
-  customTitle?: string,
-): StudyNote {
-  const cleanTitle = cleanTopicFromInput(customTitle || rawQuery);
-  const base = buildComprehensiveNoteFromSource({
-    source,
-    query: rawQuery,
-    title: cleanTitle,
+type GeminiGeneratedPayload = {
+  title?: string;
+  snippet?: string;
+  chapters?: {
+    title?: string;
+    summary?: string;
+    points?: string[];
+  }[];
+  flashcards?: {
+    front?: string;
+    back?: string;
+  }[];
+  quiz?: {
+    question?: string;
+    options?: string[];
+    correctIndex?: number;
+    explanation?: string;
+  }[];
+  mindmapBranches?: {
+    title?: string;
+    detail?: string;
+  }[];
+};
+
+const DEFAULT_KUPAS_GEMINI_KEY =
+  "AQ.Ab8RN6LFr-Xil4RZ2tQCEPWmM7VQ-OWbN_EB3oGSw3yKacc0OQ";
+
+function sanitizePromptTopic(raw: string): string {
+  const cleaned = cleanTopicFromInput(raw)
+    .replace(
+      /^(buatkan|buat|tolong buatkan|tolong|bantu buatkan|bantu)\s+(pelajaran|materi|catatan|ringkasan|pembelajaran)\s+(dari|tentang|mengenai|soal)?\s*/i,
+      "",
+    )
+    .replace(/^(materi|pelajaran|catatan|ringkasan)\s+(tentang|mengenai)?\s*/i, "")
+    .trim();
+
+  if (!cleaned) return cleanTopicFromInput(raw);
+  return cleaned[0].toUpperCase() + cleaned.slice(1);
+}
+
+async function generateWithGemini(params: {
+  topic: string;
+  content: string;
+  source?: string;
+}): Promise<StudyNote | null> {
+  const apiKey = (process.env.GEMINI_API_KEY || DEFAULT_KUPAS_GEMINI_KEY).trim();
+  if (!apiKey) return null;
+
+  const systemPrompt = [
+    "Kamu adalah asisten pendidik untuk aplikasi belajar Kupas.",
+    "Tugasmu adalah menyusun materi pembelajaran dalam bahasa Indonesia yang RINGKAS, JELAS, dan MUDAH DIPAHAMI berdasarkan topik atau isi berkas/catatan yang diberikan.",
+    "Gunakan judul topik yang bersih (bukan kalimat perintah mentah).",
+    "Kembalikan HANYA JSON valid dengan struktur:",
+    "{",
+    '  "title": "Judul topik bersih",',
+    '  "snippet": "Ringkasan 1-2 kalimat yang jelas dan mudah dipahami",',
+    '  "chapters": [',
+    '    { "title": "Bab 1 · ...", "summary": "Penjelasan ringkas dan jelas", "points": ["Poin 1", "Poin 2", "Poin 3"] }',
+    "  ],",
+    '  "flashcards": [{ "front": "Pertanyaan singkat", "back": "Jawaban jelas" }],',
+    '  "quiz": [{ "question": "Soal latihan", "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"], "correctIndex": 0, "explanation": "Penjelasan singkat" }],',
+    '  "mindmapBranches": [{ "title": "Cabang konsep", "detail": "Keterangan singkat" }]',
+    "}",
+  ].join("\n");
+
+  const userPrompt = [
+    `Topik: ${params.topic}`,
+    `Jenis sumber: ${params.source || "upload"}`,
+    `Materi / Catatan / Isi Berkas:\n${params.content.slice(0, 12000)}`,
+  ].join("\n\n");
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(
+    apiKey,
+  )}`;
+
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: {
+        parts: [{ text: systemPrompt }],
+      },
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: userPrompt }],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.4,
+        responseMimeType: "application/json",
+      },
+    }),
   });
-  const qLower = `${rawQuery} ${cleanTitle}`.toLowerCase();
 
-  if (
-    qLower.includes("matematika diskrit") ||
-    qLower.includes("himpunan") ||
-    qLower.includes("graf") ||
-    qLower.includes("kombinatorika")
-  ) {
-    const displayTitle = cleanTitle || "Matematika Diskrit";
-    const fallback = generateStudyNoteFromInput({ source, query: displayTitle });
-    return {
-      ...fallback,
-      id: base.id,
-      title: displayTitle,
-      sourceInput: rawQuery,
-      snippet:
-        "Mempelajari struktur objek diskrit (terpisah/terhitung) seperti himpunan, logika, relasi & fungsi, kombinatorika, serta teori graf.",
-      chapterCount: 3,
-      chapters: [
-        {
-          title: "Bab 1 · Himpunan, Relasi & Fungsi",
-          summary:
-            "Matematika diskrit berfokus pada objek yang terpisah/terbilang, dimulai dari operasi himpunan serta pemetaan relasi dan fungsi.",
-          points: [
-            "Operasi dasar himpunan: gabungan (A ∪ B), irisan (A ∩ B), selisih (A − B), dan komplemen.",
-            "Fungsi memetakan setiap elemen domain tepat ke satu elemen kodomain.",
-            "Relasi biner menghubungkan anggota himpunan A ke himpunan B berdasarkan aturan tertentu.",
-          ],
-        },
-        {
-          title: "Bab 2 · Kombinatorika & Peluang Diskrit",
-          summary:
-            "Menghitung banyaknya kemungkinan susunan atau pemilihan tanpa mencacah satu per satu.",
-          points: [
-            "Aturan perkalian dipakai untuk kejadian berurutan/bersamaan; aturan penjumlahan untuk pilihan saling lepas.",
-            "Permutasi memperhatikan urutan (P(n,r)), sedangkan kombinasi tidak memperhatikan urutan (C(n,r)).",
-            "Prinsip sangkar burung (Pigeonhole Principle) membantu membuktikan keberadaan minimal satu kelompok berisi ≥ k elemen.",
-          ],
-        },
-        {
-          title: "Bab 3 · Teori Graf & Penerapan Komputasi",
-          summary:
-            "Graf terdiri atas simpul (vertex) dan sisi (edge) untuk memodelkan jaringan, rute, dan ketergantungan.",
-          points: [
-            "Jumlah derajat seluruh simpul pada graf sama dengan dua kali jumlah sisinya.",
-            "Graf berarah membedakan arah sisi (in-degree dan out-degree), sedangkan graf tak-berarah bersifat dua arah.",
-            "Diterapkan pada jaringan komputer, penjadwalan tugas, dan pencarian jalur terpendek.",
-          ],
-        },
-      ],
-      flashcards: [
-        {
-          id: `${base.id}-fc-1`,
-          front: "Apa perbedaan utama permutasi dan kombinasi?",
-          back: "Permutasi memperhatikan urutan elemen, sedangkan kombinasi tidak memperhatikan urutan.",
-        },
-        {
-          id: `${base.id}-fc-2`,
-          front: "Apa komponen utama pembentuk sebuah graf?",
-          back: "Himpunan simpul (vertices/nodes) dan himpunan sisi (edges) yang menghubungkan simpul-simpul tersebut.",
-        },
-      ],
-      quiz: [
-        {
-          question: "Jika sebuah graf memiliki 5 sisi, berapakah jumlah derajat seluruh simpulnya?",
-          options: ["5", "10", "15", "20"],
-          correctIndex: 1,
-          explanation:
-            "Menurut teorema jabat tangan (handshaking lemma), jumlah derajat semua simpul = 2 × jumlah sisi = 2 × 5 = 10.",
-        },
-        {
-          question: "Kapan aturan perkalian digunakan dalam kombinatorika?",
-          options: [
-            "Saat memilih satu jalur dari beberapa pilihan saling lepas",
-            "Saat menyusun keputusan berurutan yang masing-masing punya pilihan sendiri",
-            "Saat mengurangkan dua himpunan",
-            "Saat menghitung komplemen himpunan",
-          ],
-          correctIndex: 1,
-          explanation:
-            "Aturan perkalian mengalikan banyaknya cara pada setiap tahap yang dilakukan bersama/berurutan.",
-        },
-      ],
-      mindmapRoot: {
-        label: displayTitle.slice(0, 46),
-        branches: [
-          { title: "Himpunan & Relasi", detail: "Operasi himpunan & pemetaan fungsi" },
-          { title: "Kombinatorika", detail: "Aturan hitung, permutasi & kombinasi" },
-          { title: "Teori Graf", detail: "Simpul, sisi & pemodelan jaringan" },
-        ],
-      },
-    };
-  }
+  if (!res.ok) return null;
 
-  if (qLower.includes("logika") || qLower.includes("proposisi") || qLower.includes("implikasi")) {
-    const displayTitle = cleanTitle || "Logika Matematika";
-    const fallback = generateStudyNoteFromInput({ source, query: displayTitle });
-    return {
-      ...fallback,
-      id: base.id,
-      title: displayTitle,
-      sourceInput: rawQuery,
-      snippet:
-        "Mempelajari pernyataan (proposisi), operator logika (¬, ∧, ∨, →, ↔), tabel kebenaran, dan ekuivalensi logika.",
-      chapterCount: 3,
-      chapters: [
-        {
-          title: "Bab 1 · Proposisi & Operator Dasar",
-          summary:
-            "Proposisi adalah kalimat deklaratif yang bernilai benar (B/T) atau salah (S/F), tetapi tidak keduanya sekaligus.",
-          points: [
-            "Negasi (¬p): membalikkan nilai kebenaran proposisi p.",
-            "Konjungsi (p ∧ q): bernilai benar hanya jika p dan q keduanya benar.",
-            "Disjungsi inklusif (p ∨ q): bernilai salah hanya jika p dan q keduanya salah.",
-          ],
-        },
-        {
-          title: "Bab 2 · Implikasi (→) & Biimplikasi (↔)",
-          summary:
-            "Implikasi 'jika p maka q' hanya bernilai salah ketika anteseden p benar dan konsekuen q salah.",
-          points: [
-            "p → q ekuivalen secara logika dengan ¬p ∨ q.",
-            "Kontraposisi dari p → q adalah ¬q → ¬p (memiliki nilai kebenaran sama).",
-            "Biimplikasi (p ↔ q) bernilai benar jika p dan q memiliki nilai kebenaran yang sama.",
-          ],
-        },
-        {
-          title: "Bab 3 · Tabel Kebenaran & Inferensi",
-          summary:
-            "Menyusun baris kombinasi nilai kebenaran untuk mengecek tautologi, kontradiksi, dan validitas argumen.",
-          points: [
-            "Untuk n proposisi dasar, tabel kebenaran memiliki 2^n baris.",
-            "Modus Ponens: dari (p → q) dan p dapat disimpulkan q.",
-          ],
-        },
-      ],
-      flashcards: [
-        {
-          id: `${base.id}-fc-1`,
-          front: "Kapan implikasi p → q bernilai salah?",
-          back: "Hanya ketika p bernilai benar (T/B) dan q bernilai salah (F/S).",
-        },
-        {
-          id: `${base.id}-fc-2`,
-          front: "Apa bentuk kontraposisi dari 'Jika hujan (p), maka jalan basah (q)'?",
-          back: "Jika jalan tidak basah (¬q), maka tidak hujan (¬p).",
-        },
-      ],
-      quiz: [
-        {
-          question: "Jika p bernilai Benar dan q bernilai Salah, berapakah nilai kebenaran dari (p → q)?",
-          options: ["Benar", "Salah", "Tautologi", "Tidak dapat ditentukan"],
-          correctIndex: 1,
-          explanation: "Implikasi p → q bernilai Salah tepat ketika p Benar dan q Salah.",
-        },
-      ],
-      mindmapRoot: {
-        label: displayTitle.slice(0, 46),
-        branches: [
-          { title: "Operator Dasar", detail: "Negasi (¬), Konjungsi (∧), Disjungsi (∨)" },
-          { title: "Bersyarat", detail: "Implikasi (→), Kontraposisi, Biimplikasi (↔)" },
-          { title: "Evaluasi", detail: "Tabel kebenaran (2^n baris) & penarikan kesimpulan" },
-        ],
-      },
-    };
-  }
+  const data = await res.json();
+  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  if (!rawText) return null;
 
-  return base;
+  const parsed = JSON.parse(rawText) as GeminiGeneratedPayload;
+  const fallback = buildComprehensiveNoteFromSource({
+    source: params.source,
+    query: params.content,
+    title: params.topic,
+  });
+
+  const chapters =
+    Array.isArray(parsed.chapters) && parsed.chapters.length > 0
+      ? parsed.chapters
+          .map((ch, idx) => ({
+            title: (ch.title || `Bab ${idx + 1} · ${params.topic}`).trim(),
+            summary: (ch.summary || "").trim(),
+            points: Array.isArray(ch.points)
+              ? ch.points.map((p) => String(p).trim()).filter(Boolean)
+              : [],
+          }))
+          .filter((ch) => ch.summary.length > 0)
+      : fallback.chapters;
+
+  if (chapters.length === 0) return null;
+
+  const flashcards =
+    Array.isArray(parsed.flashcards) && parsed.flashcards.length > 0
+      ? parsed.flashcards
+          .map((fc, idx) => ({
+            id: `${fallback.id}-fc-${idx + 1}`,
+            front: (fc.front || "").trim(),
+            back: (fc.back || "").trim(),
+          }))
+          .filter((fc) => fc.front && fc.back)
+      : fallback.flashcards;
+
+  const quiz =
+    Array.isArray(parsed.quiz) && parsed.quiz.length > 0
+      ? parsed.quiz
+          .map((q) => ({
+            question: (q.question || "").trim(),
+            options: Array.isArray(q.options)
+              ? q.options.map((o) => String(o).trim()).filter(Boolean)
+              : [],
+            correctIndex:
+              typeof q.correctIndex === "number" && q.correctIndex >= 0
+                ? q.correctIndex
+                : 0,
+            explanation: (q.explanation || "").trim(),
+          }))
+          .filter((q) => q.question && q.options.length >= 2)
+      : fallback.quiz;
+
+  const branches =
+    Array.isArray(parsed.mindmapBranches) && parsed.mindmapBranches.length > 0
+      ? parsed.mindmapBranches
+          .map((b) => ({
+            title: (b.title || "").trim(),
+            detail: (b.detail || "").trim(),
+          }))
+          .filter((b) => b.title)
+      : fallback.mindmapRoot.branches;
+
+  const cleanTitle = sanitizePromptTopic(parsed.title || params.topic);
+
+  return {
+    ...fallback,
+    title: cleanTitle || fallback.title,
+    snippet: (parsed.snippet || fallback.snippet).trim(),
+    chapterCount: chapters.length,
+    chapters,
+    flashcards: flashcards.length > 0 ? flashcards : fallback.flashcards,
+    quiz: quiz.length > 0 ? quiz : fallback.quiz,
+    mindmapRoot: {
+      label: (cleanTitle || fallback.title).slice(0, 46),
+      branches: branches.length > 0 ? branches : fallback.mindmapRoot.branches,
+    },
+  };
 }
 
 export async function POST(req: Request) {
@@ -205,8 +202,36 @@ export async function POST(req: Request) {
       );
     }
 
-    const note = buildTopicSpecificNote(rawQuery, body.source, body.title);
-    return NextResponse.json({ note }, { status: 200 });
+    const cleanTitle = sanitizePromptTopic(body.title || rawQuery);
+
+    try {
+      const aiNote = await generateWithGemini({
+        topic: cleanTitle,
+        content: rawQuery,
+        source: body.source,
+      });
+      if (aiNote) {
+        return NextResponse.json({ note: aiNote }, { status: 200 });
+      }
+    } catch {
+      // lanjut ke penyusun lokal jika panggilan API gagal
+    }
+
+    const localNote = generateStudyNoteFromInput({
+      source: body.source,
+      query: cleanTitle,
+    });
+
+    return NextResponse.json(
+      {
+        note: {
+          ...localNote,
+          title: cleanTitle || localNote.title,
+          sourceInput: rawQuery,
+        },
+      },
+      { status: 200 },
+    );
   } catch {
     return NextResponse.json(
       { error: "Gagal memproses permintaan pembuatan materi." },
