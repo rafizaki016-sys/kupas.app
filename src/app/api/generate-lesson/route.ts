@@ -3,13 +3,7 @@ import {
   buildRichSubjectNote,
   cleanTopicFromInput,
   type StudyNote,
-} from "@/lib/kupas-store";
-
-type GenerateBody = {
-  title?: string;
-  content?: string;
-  source?: string;
-};
+} from "../../../lib/kupas-store";
 
 type GeminiGeneratedPayload = {
   title?: string;
@@ -35,19 +29,54 @@ type GeminiGeneratedPayload = {
   }[];
 };
 
+function guessMimeType(file: File): string {
+  if (file.type) return file.type;
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".mp3")) return "audio/mpeg";
+  if (lower.endsWith(".wav")) return "audio/wav";
+  if (lower.endsWith(".m4a")) return "audio/mp4";
+  if (lower.endsWith(".ogg")) return "audio/ogg";
+  if (lower.endsWith(".mp4")) return "video/mp4";
+  if (lower.endsWith(".webm")) return "video/webm";
+  if (lower.endsWith(".mov")) return "video/quicktime";
+  if (lower.endsWith(".csv")) return "text/csv";
+  if (lower.endsWith(".md")) return "text/markdown";
+  return "text/plain";
+}
+
+function isGeminiInlineSupported(mime: string): boolean {
+  return (
+    mime === "application/pdf" ||
+    mime.startsWith("image/") ||
+    mime.startsWith("audio/") ||
+    mime.startsWith("video/")
+  );
+}
+
+function isPlainTextFile(file: File): boolean {
+  const lower = file.name.toLowerCase();
+  return (
+    /\.(txt|md|markdown|csv|json|log|html|xml)$/i.test(lower) ||
+    file.type.startsWith("text/")
+  );
+}
+
 async function generateWithGemini(params: {
   topic: string;
   content: string;
   source?: string;
+  files: File[];
 }): Promise<StudyNote | null> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
-  // API key standar Google AI Studio berawalan "AIza"
   if (!apiKey || !apiKey.startsWith("AIza")) return null;
 
   const systemPrompt = [
     "Kamu adalah asisten pendidik untuk aplikasi belajar Kupas.",
-    "Tugasmu adalah menyusun materi pembelajaran dalam bahasa Indonesia yang RINGKAS, JELAS, dan MUDAH DIPAHAMI berdasarkan topik atau isi berkas/catatan yang diberikan.",
-    "Jangan pernah menyalin kalimat perintah pengguna sebagai judul atau poin materi.",
+    "Tugasmu adalah membaca seluruh berkas (PDF, dokumen, gambar, audio, video) dan catatan yang diberikan, lalu menyusun materi pembelajaran dalam bahasa Indonesia yang RINGKAS, JELAS, dan MUDAH DIPAHAMI.",
     "Kembalikan HANYA JSON valid dengan struktur:",
     "{",
     '  "title": "Judul topik bersih",',
@@ -61,11 +90,44 @@ async function generateWithGemini(params: {
     "}",
   ].join("\n");
 
-  const userPrompt = [
-    `Topik: ${params.topic}`,
-    `Jenis sumber: ${params.source || "upload"}`,
-    `Materi / Catatan / Isi Berkas:\n${params.content.slice(0, 12000)}`,
-  ].join("\n\n");
+  const parts: Array<
+    | { text: string }
+    | { inlineData: { mimeType: string; data: string } }
+  > = [
+    {
+      text: [
+        `Topik: ${params.topic}`,
+        `Sumber: ${params.source || "upload"}`,
+        params.content ? `Catatan / Teks:\n${params.content.slice(0, 16000)}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+    },
+  ];
+
+  for (const file of params.files.slice(0, 5)) {
+    const mime = guessMimeType(file);
+    if (isPlainTextFile(file)) {
+      const txt = await file.text();
+      if (txt.trim()) {
+        parts.push({
+          text: `Isi berkas "${file.name}":\n${txt.slice(0, 16000)}`,
+        });
+      }
+    } else if (isGeminiInlineSupported(mime) && file.size <= 20 * 1024 * 1024) {
+      const buf = Buffer.from(await file.arrayBuffer());
+      parts.push({
+        inlineData: {
+          mimeType: mime,
+          data: buf.toString("base64"),
+        },
+      });
+    } else {
+      parts.push({
+        text: `Berkas terlampir: ${file.name} (${mime})`,
+      });
+    }
+  }
 
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(
     apiKey,
@@ -81,7 +143,7 @@ async function generateWithGemini(params: {
       contents: [
         {
           role: "user",
-          parts: [{ text: userPrompt }],
+          parts,
         },
       ],
       generationConfig: {
@@ -100,7 +162,7 @@ async function generateWithGemini(params: {
   const parsed = JSON.parse(rawText) as GeminiGeneratedPayload;
   const fallback = buildRichSubjectNote({
     source: params.source,
-    query: params.content,
+    query: params.content || params.topic,
     title: params.topic,
   });
 
@@ -163,6 +225,10 @@ async function generateWithGemini(params: {
     ...fallback,
     title: cleanTitle || fallback.title,
     snippet: (parsed.snippet || fallback.snippet).trim(),
+    sourceInput:
+      params.files.length > 0
+        ? params.files.map((f) => f.name).join(", ")
+        : fallback.sourceInput,
     chapterCount: chapters.length,
     chapters,
     flashcards: flashcards.length > 0 ? flashcards : fallback.flashcards,
@@ -176,36 +242,77 @@ async function generateWithGemini(params: {
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as GenerateBody;
-    const rawQuery = (body.content || body.title || "").trim();
+    const contentType = req.headers.get("content-type") || "";
+    let rawTitle = "";
+    let rawContent = "";
+    let source = "upload";
+    let uploadedFiles: File[] = [];
 
-    if (!rawQuery) {
+    if (contentType.includes("multipart/form-data")) {
+      const form = await req.formData();
+      rawTitle = String(form.get("title") || "").trim();
+      rawContent = String(form.get("content") || "").trim();
+      source = String(form.get("source") || "upload").trim();
+      uploadedFiles = form
+        .getAll("files")
+        .filter((item): item is File => item instanceof File && item.size > 0);
+    } else {
+      const body = (await req.json()) as {
+        title?: string;
+        content?: string;
+        source?: string;
+      };
+      rawTitle = (body.title || "").trim();
+      rawContent = (body.content || "").trim();
+      source = (body.source || "upload").trim();
+    }
+
+    if (!rawTitle && !rawContent && uploadedFiles.length === 0) {
       return NextResponse.json(
-        { error: "Topik atau materi tidak boleh kosong." },
+        { error: "Topik atau file materi tidak boleh kosong." },
         { status: 400 },
       );
     }
 
-    const cleanTitle = cleanTopicFromInput(body.title || rawQuery);
+    // Ekstrak isi file teks polos bila ada untuk memperkaya konten
+    const extractedTexts: string[] = [];
+    for (const file of uploadedFiles) {
+      if (isPlainTextFile(file)) {
+        const txt = await file.text();
+        if (txt.trim()) extractedTexts.push(txt.slice(0, 12000));
+      }
+    }
+
+    const combinedContent = [rawContent, ...extractedTexts].filter(Boolean).join("\n\n");
+    const firstFileTitle = uploadedFiles[0]
+      ? cleanTopicFromInput(uploadedFiles[0].name.replace(/\.[^/.]+$/, ""))
+      : "";
+    const cleanTitle =
+      cleanTopicFromInput(rawTitle || combinedContent) || firstFileTitle || "Materi Belajar";
 
     try {
       const aiNote = await generateWithGemini({
         topic: cleanTitle,
-        content: rawQuery,
-        source: body.source,
+        content: combinedContent,
+        source,
+        files: uploadedFiles,
       });
       if (aiNote) {
         return NextResponse.json({ note: aiNote }, { status: 200 });
       }
     } catch {
-      // lanjut ke penyusun materi terstruktur
+      // lanjut ke penyusun lokal jika API eksternal tidak aktif
     }
 
     const richNote = buildRichSubjectNote({
-      source: body.source,
-      query: rawQuery,
+      source,
+      query: combinedContent || firstFileTitle || cleanTitle,
       title: cleanTitle,
     });
+
+    if (uploadedFiles.length > 0) {
+      richNote.sourceInput = uploadedFiles.map((f) => f.name).join(", ");
+    }
 
     return NextResponse.json({ note: richNote }, { status: 200 });
   } catch {
