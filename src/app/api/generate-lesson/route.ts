@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import {
-  buildComprehensiveNoteFromSource,
+  buildRichSubjectNote,
   cleanTopicFromInput,
-  generateStudyNoteFromInput,
   type StudyNote,
 } from "@/lib/kupas-store";
 
@@ -36,34 +35,19 @@ type GeminiGeneratedPayload = {
   }[];
 };
 
-const DEFAULT_KUPAS_GEMINI_KEY =
-  "AQ.Ab8RN6LFr-Xil4RZ2tQCEPWmM7VQ-OWbN_EB3oGSw3yKacc0OQ";
-
-function sanitizePromptTopic(raw: string): string {
-  const cleaned = cleanTopicFromInput(raw)
-    .replace(
-      /^(buatkan|buat|tolong buatkan|tolong|bantu buatkan|bantu)\s+(pelajaran|materi|catatan|ringkasan|pembelajaran)\s+(dari|tentang|mengenai|soal)?\s*/i,
-      "",
-    )
-    .replace(/^(materi|pelajaran|catatan|ringkasan)\s+(tentang|mengenai)?\s*/i, "")
-    .trim();
-
-  if (!cleaned) return cleanTopicFromInput(raw);
-  return cleaned[0].toUpperCase() + cleaned.slice(1);
-}
-
 async function generateWithGemini(params: {
   topic: string;
   content: string;
   source?: string;
 }): Promise<StudyNote | null> {
-  const apiKey = (process.env.GEMINI_API_KEY || DEFAULT_KUPAS_GEMINI_KEY).trim();
-  if (!apiKey) return null;
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  // API key standar Google AI Studio berawalan "AIza"
+  if (!apiKey || !apiKey.startsWith("AIza")) return null;
 
   const systemPrompt = [
     "Kamu adalah asisten pendidik untuk aplikasi belajar Kupas.",
     "Tugasmu adalah menyusun materi pembelajaran dalam bahasa Indonesia yang RINGKAS, JELAS, dan MUDAH DIPAHAMI berdasarkan topik atau isi berkas/catatan yang diberikan.",
-    "Gunakan judul topik yang bersih (bukan kalimat perintah mentah).",
+    "Jangan pernah menyalin kalimat perintah pengguna sebagai judul atau poin materi.",
     "Kembalikan HANYA JSON valid dengan struktur:",
     "{",
     '  "title": "Judul topik bersih",',
@@ -114,7 +98,7 @@ async function generateWithGemini(params: {
   if (!rawText) return null;
 
   const parsed = JSON.parse(rawText) as GeminiGeneratedPayload;
-  const fallback = buildComprehensiveNoteFromSource({
+  const fallback = buildRichSubjectNote({
     source: params.source,
     query: params.content,
     title: params.topic,
@@ -173,7 +157,7 @@ async function generateWithGemini(params: {
           .filter((b) => b.title)
       : fallback.mindmapRoot.branches;
 
-  const cleanTitle = sanitizePromptTopic(parsed.title || params.topic);
+  const cleanTitle = cleanTopicFromInput(parsed.title || params.topic);
 
   return {
     ...fallback,
@@ -202,7 +186,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const cleanTitle = sanitizePromptTopic(body.title || rawQuery);
+    const cleanTitle = cleanTopicFromInput(body.title || rawQuery);
 
     try {
       const aiNote = await generateWithGemini({
@@ -214,24 +198,16 @@ export async function POST(req: Request) {
         return NextResponse.json({ note: aiNote }, { status: 200 });
       }
     } catch {
-      // lanjut ke penyusun lokal jika panggilan API gagal
+      // lanjut ke penyusun materi terstruktur
     }
 
-    const localNote = generateStudyNoteFromInput({
+    const richNote = buildRichSubjectNote({
       source: body.source,
-      query: cleanTitle,
+      query: rawQuery,
+      title: cleanTitle,
     });
 
-    return NextResponse.json(
-      {
-        note: {
-          ...localNote,
-          title: cleanTitle || localNote.title,
-          sourceInput: rawQuery,
-        },
-      },
-      { status: 200 },
-    );
+    return NextResponse.json({ note: richNote }, { status: 200 });
   } catch {
     return NextResponse.json(
       { error: "Gagal memproses permintaan pembuatan materi." },
