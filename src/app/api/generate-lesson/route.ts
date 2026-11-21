@@ -22,12 +22,35 @@ type OutlinePayload = {
   mindmapBranches: { title: string; detail: string }[];
 };
 
+type ConceptDeepDive = {
+  concept: string;
+  explanation: string;
+  analogy: string;
+  misconception: string;
+  correction: string;
+};
+
+type WorkedExample = {
+  caseTitle: string;
+  givenData: string;
+  numberedSteps: string[];
+  finalResult: string;
+};
+
+type ComprehensionCheckItem = {
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+};
+
 type ChapterDetailPayload = {
   title: string;
-  summary: string;
-  points: string[];
-  formulaOrHighlight: string;
-  example: string;
+  conceptDeepDives: ConceptDeepDive[];
+  workedExamples: WorkedExample[];
+  commonMistakes: string[];
+  comprehensionChecks: ComprehensionCheckItem[];
+  summaryPoints: string[];
 };
 
 type PracticePayload = {
@@ -93,21 +116,84 @@ const OUTLINE_SCHEMA = {
   required: ["title", "snippet", "chapters", "mindmapBranches"],
 };
 
-// Skema JSON (responseSchema) Tahap 2: Isi Detail Satu Bab
+// Skema JSON (responseSchema) Tahap 2: Isi Lengkap Satu Bab Mengajar
 const CHAPTER_DETAIL_SCHEMA = {
   type: "OBJECT",
   properties: {
     title: { type: "STRING" },
-    summary: { type: "STRING" },
-    points: {
+    conceptDeepDives: {
+      type: "ARRAY",
+      minItems: 1,
+      items: {
+        type: "OBJECT",
+        properties: {
+          concept: { type: "STRING" },
+          explanation: { type: "STRING" },
+          analogy: { type: "STRING" },
+          misconception: { type: "STRING" },
+          correction: { type: "STRING" },
+        },
+        required: ["concept", "explanation", "analogy", "misconception", "correction"],
+      },
+    },
+    workedExamples: {
+      type: "ARRAY",
+      minItems: 2,
+      items: {
+        type: "OBJECT",
+        properties: {
+          caseTitle: { type: "STRING" },
+          givenData: { type: "STRING" },
+          numberedSteps: {
+            type: "ARRAY",
+            minItems: 2,
+            items: { type: "STRING" },
+          },
+          finalResult: { type: "STRING" },
+        },
+        required: ["caseTitle", "givenData", "numberedSteps", "finalResult"],
+      },
+    },
+    commonMistakes: {
       type: "ARRAY",
       minItems: 3,
       items: { type: "STRING" },
     },
-    formulaOrHighlight: { type: "STRING" },
-    example: { type: "STRING" },
+    comprehensionChecks: {
+      type: "ARRAY",
+      minItems: 4,
+      maxItems: 4,
+      items: {
+        type: "OBJECT",
+        properties: {
+          question: { type: "STRING" },
+          options: {
+            type: "ARRAY",
+            minItems: 4,
+            maxItems: 4,
+            items: { type: "STRING" },
+          },
+          correctIndex: { type: "INTEGER" },
+          explanation: { type: "STRING" },
+        },
+        required: ["question", "options", "correctIndex", "explanation"],
+      },
+    },
+    summaryPoints: {
+      type: "ARRAY",
+      minItems: 5,
+      maxItems: 7,
+      items: { type: "STRING" },
+    },
   },
-  required: ["title", "summary", "points", "formulaOrHighlight", "example"],
+  required: [
+    "title",
+    "conceptDeepDives",
+    "workedExamples",
+    "commonMistakes",
+    "comprehensionChecks",
+    "summaryPoints",
+  ],
 };
 
 // Skema JSON (responseSchema) Tahap 3: Kartu Hafalan & Kuis
@@ -160,21 +246,41 @@ const OUTLINE_SYSTEM_INSTRUCTION = [
   "- Keluaran HANYA JSON sesuai skema.",
 ].join("\n");
 
-// Prompt Tahap 2: Pengisian Detail Per Bab Secara Terpisah
-const CHAPTER_DETAIL_SYSTEM_INSTRUCTION = [
-  "Kamu adalah pengajar untuk aplikasi belajar Kupas.",
-  "Isi konten LENGKAP untuk SATU BAB spesifik berdasarkan kerangka bab dan materi sumber.",
-  "Gunakan bahasa Indonesia yang ringkas, jelas, dan mudah dipahami.",
-  'Jangan menambah fakta yang tidak ada di materi; bila melengkapi dengan pengetahuan umum karena materi singkat, beri tanda "dari luar materi".',
-  "Sertakan minimal 3 poin pembahasan yang berbeda satu sama lain, 1 rumus/sorotan kunci singkat, dan 1 contoh konkret.",
-].join("\n");
-
 // Prompt Tahap 3: Penyusunan Kartu Hafalan & Kuis
 const PRACTICE_SYSTEM_INSTRUCTION = [
   "Kamu adalah penyusun latihan soal dan kartu hafalan untuk aplikasi belajar Kupas.",
   "Buat kartu hafalan (flashcards) dan soal pilihan ganda (quiz) dalam bahasa Indonesia berdasarkan bab yang telah disusun.",
   "Tiap soal kuis harus memiliki tepat 4 pilihan jawaban dan correctIndex antara 0 sampai 3, serta penjelasan singkat yang akurat.",
 ].join("\n");
+
+function buildTeacherChapterPrompt(params: {
+  title: string;
+  keyConcepts: string[];
+  sourceSlice: string;
+  extraInstruction?: string;
+}): string {
+  const conceptsText =
+    params.keyConcepts.length > 0 ? params.keyConcepts.join(", ") : params.title;
+  const lines = [
+    "Kamu guru berpengalaman. Tulis isi SATU bab secara lengkap dan mengajar, bukan ringkasan.",
+    `Bab: ${params.title} | Konsep kunci yang wajib dibahas: ${conceptsText}`,
+    `Materi sumber: """${params.sourceSlice}"""`,
+    "",
+    "Syarat wajib:",
+    "- Tiap konsep: penjelasan 120-200 kata, 1 analogi, 1 anggapan keliru beserta koreksinya.",
+    "- Minimal 2 contoh terkerjakan dengan langkah bernomor dan angka nyata.",
+    "- Minimal 3 kesalahan umum, 4 soal cek pemahaman (4 opsi, 1 benar, ada penjelasan).",
+    "- Rangkuman 5-7 poin dengan kalimat baru, tidak menyalin penjelasan.",
+    "- Dilarang mengulang kalimat yang sama di bagian berbeda.",
+    '- Dilarang kalimat kosong seperti "bab ini terdiri atas...".',
+    "- Bahasa Indonesia yang jelas untuk pelajar.",
+    "- Keluaran HANYA JSON sesuai skema.",
+  ];
+  if (params.extraInstruction) {
+    lines.push("", params.extraInstruction);
+  }
+  return lines.join("\n");
+}
 
 function guessMimeType(file: File): string {
   if (file.type) return file.type;
@@ -314,6 +420,22 @@ async function buildMediaAndTextParts(params: {
   return parts;
 }
 
+function getSourceSliceForChapter(
+  fullMaterial: string,
+  chapterIndex: number,
+  totalChapters: number,
+): string {
+  const clean = fullMaterial.trim();
+  if (!clean) return "";
+  if (clean.length <= 3500 || totalChapters <= 1) {
+    return clean.slice(0, 4500);
+  }
+  const chunkSize = Math.ceil(clean.length / totalChapters);
+  const start = Math.max(0, chapterIndex * chunkSize - 250);
+  const end = Math.min(clean.length, (chapterIndex + 1) * chunkSize + 250);
+  return clean.slice(start, end);
+}
+
 function expandChaptersToMinimum(
   baseChapters: ChapterItem[],
   topic: string,
@@ -386,44 +508,192 @@ function expandChaptersToMinimum(
   return result.slice(0, MAX_CHAPTERS);
 }
 
-function normalizeChapterDetail(
-  detail: ChapterDetailPayload,
-  fallbackChapter: ChapterItem,
-  chapterIndex: number,
-  objectives: string[],
-): ChapterItem {
-  const rawTitle = (detail.title || fallbackChapter.title || `Bab ${chapterIndex + 1}`).trim();
+function isChapterDetailComplete(detail: ChapterDetailPayload | null): boolean {
+  if (!detail) return false;
+  const hasConcepts =
+    Array.isArray(detail.conceptDeepDives) &&
+    detail.conceptDeepDives.some(
+      (c) =>
+        c.concept?.trim() &&
+        c.explanation?.trim() &&
+        c.analogy?.trim() &&
+        c.misconception?.trim() &&
+        c.correction?.trim(),
+    );
+  const hasExamples =
+    Array.isArray(detail.workedExamples) && detail.workedExamples.length >= 2;
+  const hasMistakes =
+    Array.isArray(detail.commonMistakes) && detail.commonMistakes.length >= 3;
+  const hasChecks =
+    Array.isArray(detail.comprehensionChecks) &&
+    detail.comprehensionChecks.length >= 4;
+  const hasSummaryPoints =
+    Array.isArray(detail.summaryPoints) && detail.summaryPoints.length >= 5;
+
+  return (
+    hasConcepts &&
+    hasExamples &&
+    hasMistakes &&
+    hasChecks &&
+    hasSummaryPoints
+  );
+}
+
+function mergeChapterDetailParts(
+  primary: ChapterDetailPayload | null,
+  supplement: ChapterDetailPayload | null,
+): ChapterDetailPayload | null {
+  if (!primary && !supplement) return null;
+  if (!primary) return supplement;
+  if (!supplement) return primary;
+
+  const uniqueByKey = <T,>(arr: T[], getKey: (item: T) => string): T[] => {
+    const seen = new Set<string>();
+    const out: T[] = [];
+    for (const item of arr) {
+      const k = getKey(item).trim().toLowerCase();
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      out.push(item);
+    }
+    return out;
+  };
+
+  return {
+    title: primary.title?.trim() || supplement.title?.trim() || "",
+    conceptDeepDives: uniqueByKey(
+      [...(primary.conceptDeepDives ?? []), ...(supplement.conceptDeepDives ?? [])],
+      (c) => `${c.concept}::${c.explanation}`,
+    ),
+    workedExamples: uniqueByKey(
+      [...(primary.workedExamples ?? []), ...(supplement.workedExamples ?? [])],
+      (e) => `${e.caseTitle}::${e.finalResult}`,
+    ),
+    commonMistakes: uniqueByKey(
+      [...(primary.commonMistakes ?? []), ...(supplement.commonMistakes ?? [])],
+      (m) => m,
+    ),
+    comprehensionChecks: uniqueByKey(
+      [...(primary.comprehensionChecks ?? []), ...(supplement.comprehensionChecks ?? [])],
+      (q) => q.question,
+    ).slice(0, 4),
+    summaryPoints: uniqueByKey(
+      [...(primary.summaryPoints ?? []), ...(supplement.summaryPoints ?? [])],
+      (s) => s,
+    ).slice(0, 7),
+  };
+}
+
+function buildChapterItemFromDetail(params: {
+  detail: ChapterDetailPayload | null;
+  fallbackChapter: ChapterItem;
+  chapterIndex: number;
+  objectives: string[];
+}): ChapterItem {
+  const { detail, fallbackChapter, chapterIndex, objectives } = params;
+  const rawTitle = (detail?.title || fallbackChapter.title || `Bab ${chapterIndex + 1}`).trim();
   const title = /^bab\s*\d+/i.test(rawTitle)
     ? rawTitle
     : `Bab ${chapterIndex + 1} · ${rawTitle}`;
-  const summary = (detail.summary || fallbackChapter.summary).trim();
 
-  const extraItems: string[] = [];
+  const usedSentences = new Set<string>();
+  const addUnique = (target: string[], text?: string) => {
+    const clean = (text || "").trim();
+    if (!clean) return;
+    const norm = clean.toLowerCase();
+    if (usedSentences.has(norm)) return;
+    usedSentences.add(norm);
+    target.push(clean);
+  };
+
+  const firstConcept = detail?.conceptDeepDives?.[0];
+  const summary =
+    firstConcept?.explanation?.trim() ||
+    detail?.summaryPoints?.[0]?.trim() ||
+    fallbackChapter.summary;
+  usedSentences.add(summary.trim().toLowerCase());
+
+  const points: string[] = [];
+
   if (objectives.length > 0) {
-    extraItems.push(`Tujuan belajar: ${objectives.join("; ")}`);
-  }
-  if (detail.formulaOrHighlight?.trim()) {
-    extraItems.push(`Inti / Rumus: ${detail.formulaOrHighlight.trim()}`);
-  }
-  if (detail.example?.trim()) {
-    extraItems.push(`Contoh: ${detail.example.trim()}`);
+    addUnique(points, `Tujuan belajar: ${objectives.join("; ")}`);
   }
 
-  const rawPoints = Array.isArray(detail.points)
-    ? detail.points.map((p) => String(p).trim()).filter(Boolean)
-    : [];
+  for (const c of detail?.conceptDeepDives ?? []) {
+    addUnique(points, `Konsep "${c.concept.trim()}": ${c.explanation.trim()}`);
+    addUnique(points, `Analogi (${c.concept.trim()}): ${c.analogy.trim()}`);
+    addUnique(
+      points,
+      `Anggapan keliru & koreksi (${c.concept.trim()}): ${c.misconception.trim()} -> Koreksi: ${c.correction.trim()}`,
+    );
+  }
 
-  const mergedPoints = Array.from(new Set([...rawPoints, ...extraItems]));
-  const points =
-    mergedPoints.length >= 2
-      ? mergedPoints
-      : Array.from(new Set([...mergedPoints, ...fallbackChapter.points]));
+  for (const ex of detail?.workedExamples ?? []) {
+    const stepsText = (ex.numberedSteps ?? [])
+      .map((st, idx) => `${idx + 1}) ${st.trim()}`)
+      .join(" ");
+    addUnique(
+      points,
+      `Contoh terkerjakan (${ex.caseTitle.trim()}): Diketahui ${ex.givenData.trim()}. Langkah: ${stepsText} Hasil: ${ex.finalResult.trim()}.`,
+    );
+  }
+
+  for (const m of detail?.commonMistakes ?? []) {
+    addUnique(points, `Kesalahan umum: ${m.trim()}`);
+  }
+
+  for (const sp of detail?.summaryPoints ?? []) {
+    addUnique(points, `Rangkuman: ${sp.trim()}`);
+  }
+
+  if (points.length < 3) {
+    for (const fbPt of fallbackChapter.points) {
+      addUnique(points, fbPt);
+      if (points.length >= 3) break;
+    }
+  }
 
   return {
     title,
     summary,
     points,
   };
+}
+
+function extractQuizFromChapterDetails(
+  details: Array<ChapterDetailPayload | null>,
+): QuizItem[] {
+  const out: QuizItem[] = [];
+  const seen = new Set<string>();
+
+  for (const d of details) {
+    for (const chk of d?.comprehensionChecks ?? []) {
+      const qText = (chk.question || "").trim();
+      const opts = Array.isArray(chk.options)
+        ? chk.options.map((o) => String(o).trim()).filter(Boolean)
+        : [];
+      if (!qText || opts.length < 2) continue;
+      const key = qText.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const validIdx =
+        typeof chk.correctIndex === "number" &&
+        chk.correctIndex >= 0 &&
+        chk.correctIndex < opts.length
+          ? chk.correctIndex
+          : 0;
+
+      out.push({
+        question: qText,
+        options: opts,
+        correctIndex: validIdx,
+        explanation: (chk.explanation || "").trim(),
+      });
+    }
+  }
+
+  return out;
 }
 
 async function generateMultiStepWithGemini(params: {
@@ -449,7 +719,7 @@ async function generateMultiStepWithGemini(params: {
     systemInstruction: OUTLINE_SYSTEM_INSTRUCTION,
     userParts: baseParts,
     responseSchema: OUTLINE_SCHEMA,
-    maxOutputTokens: 2600,
+    maxOutputTokens: 2800,
     temperature: 0.25,
   });
 
@@ -487,7 +757,7 @@ async function generateMultiStepWithGemini(params: {
         },
       ],
       responseSchema: OUTLINE_SCHEMA,
-      maxOutputTokens: 2200,
+      maxOutputTokens: 2400,
       temperature: 0.25,
     });
 
@@ -535,56 +805,103 @@ async function generateMultiStepWithGemini(params: {
     });
   }
 
-  // Tahap 2: Isi tiap bab secara terpisah dengan permintaan per bab
+  const cleanTopic =
+    cleanTopicFromInput(outline?.title || params.topic) || params.topic;
+  const fullMaterialText = params.content.trim() || cleanTopic;
+
+  // Tahap 2: Isi tiap bab secara terpisah (satu panggilan per bab)
   const chapters: ChapterItem[] = [];
+  const chapterDetails: Array<ChapterDetailPayload | null> = [];
+
   for (let i = 0; i < outlineChapters.length; i++) {
     const chMeta = outlineChapters[i];
     const fbChapter = expandedFallbackChapters[i] ?? expandedFallbackChapters[0];
+    const sourceSlice = getSourceSliceForChapter(
+      fullMaterialText,
+      i,
+      outlineChapters.length,
+    );
 
-    const chapterPromptText = [
-      `Topik Utama: ${cleanTopicFromInput(outline?.title || params.topic) || params.topic}`,
-      `Bab ke-${i + 1} dari ${outlineChapters.length}: ${chMeta.title}`,
-      `Tujuan Belajar:\n${
-        chMeta.learningObjectives.length > 0
-          ? chMeta.learningObjectives.map((o, idx) => `${idx + 1}. ${o}`).join("\n")
-          : `- Memahami bahasan ${chMeta.title}`
-      }`,
-      `Konsep Kunci: ${chMeta.keyConcepts.join(", ") || chMeta.title}`,
-    ].join("\n");
+    const chapterPrompt = buildTeacherChapterPrompt({
+      title: chMeta.title,
+      keyConcepts: chMeta.keyConcepts,
+      sourceSlice,
+    });
 
     let detail = await callGeminiStructured<ChapterDetailPayload>({
       apiKey,
-      systemInstruction: CHAPTER_DETAIL_SYSTEM_INSTRUCTION,
-      userParts: [...baseParts, { text: chapterPromptText }],
+      systemInstruction: chapterPrompt,
+      userParts: [
+        ...baseParts,
+        {
+          text: `Fokus pada bab: ${chMeta.title} (Bab ${i + 1} dari ${outlineChapters.length}).`,
+        },
+      ],
       responseSchema: CHAPTER_DETAIL_SCHEMA,
-      maxOutputTokens: 1500,
-      temperature: 0.3,
+      maxOutputTokens: 5200,
+      temperature: 0.35,
     });
 
-    // Pemeriksaan Tahap 2: Jika detail bab masih kurang, minta ulang khusus bagian bab ini
-    if (!detail || !detail.summary || (detail.points?.length ?? 0) < 2) {
-      detail = await callGeminiStructured<ChapterDetailPayload>({
+    // Pemeriksaan per bab: jika bagian belum lengkap, minta ulang hanya bagian yang kurang
+    if (!isChapterDetailComplete(detail)) {
+      const missingHints: string[] = [];
+      if (!detail?.conceptDeepDives?.length) {
+        missingHints.push(
+          "lengkapi conceptDeepDives (tiap konsep 120-200 kata, 1 analogi, 1 anggapan keliru + koreksi)",
+        );
+      }
+      if ((detail?.workedExamples?.length ?? 0) < 2) {
+        missingHints.push(
+          "tambahkan contoh terkerjakan hingga minimal 2 contoh dengan langkah bernomor dan angka nyata",
+        );
+      }
+      if ((detail?.commonMistakes?.length ?? 0) < 3) {
+        missingHints.push("tambahkan kesalahan umum hingga minimal 3 butir");
+      }
+      if ((detail?.comprehensionChecks?.length ?? 0) < 4) {
+        missingHints.push(
+          "lengkapi soal cek pemahaman hingga 4 soal (4 opsi, 1 benar, ada penjelasan)",
+        );
+      }
+      if ((detail?.summaryPoints?.length ?? 0) < 5) {
+        missingHints.push(
+          "lengkapi rangkuman 5-7 poin dengan kalimat baru tanpa menyalin penjelasan",
+        );
+      }
+
+      const retryPrompt = buildTeacherChapterPrompt({
+        title: chMeta.title,
+        keyConcepts: chMeta.keyConcepts,
+        sourceSlice,
+        extraInstruction: `Bagian yang masih kurang dan wajib dilengkapi: ${missingHints.join("; ")}.`,
+      });
+
+      const supplement = await callGeminiStructured<ChapterDetailPayload>({
         apiKey,
-        systemInstruction: `${CHAPTER_DETAIL_SYSTEM_INSTRUCTION}\nLengkapi poin pembahasan, rumus/sorotan, dan contoh untuk bab ini secara jelas.`,
+        systemInstruction: retryPrompt,
         userParts: [
           ...baseParts,
           {
-            text: `${chapterPromptText}\nCatatan: Pastikan summary jelas dan points berisi minimal 3 poin penting.`,
+            text: `Lengkapi bagian yang masih kurang untuk ${chMeta.title}.`,
           },
         ],
         responseSchema: CHAPTER_DETAIL_SCHEMA,
-        maxOutputTokens: 1500,
-        temperature: 0.25,
+        maxOutputTokens: 4800,
+        temperature: 0.3,
       });
+
+      detail = mergeChapterDetailParts(detail, supplement);
     }
 
-    if (detail && detail.summary) {
-      chapters.push(
-        normalizeChapterDetail(detail, fbChapter, i, chMeta.learningObjectives),
-      );
-    } else {
-      chapters.push(fbChapter);
-    }
+    chapterDetails.push(detail);
+    chapters.push(
+      buildChapterItemFromDetail({
+        detail,
+        fallbackChapter: fbChapter,
+        chapterIndex: i,
+        objectives: chMeta.learningObjectives,
+      }),
+    );
   }
 
   // Tahap 3: Buat kartu hafalan & soal kuis berdasarkan seluruh bab
@@ -601,14 +918,14 @@ async function generateMultiStepWithGemini(params: {
     userParts: [
       {
         text: [
-          `Topik: ${cleanTopicFromInput(outline?.title || params.topic) || params.topic}`,
+          `Topik: ${cleanTopic}`,
           `Target minimal: ${TARGET_FLASHCARDS} kartu hafalan dan ${TARGET_QUIZ} soal kuis.`,
           `Ringkasan bab:\n${chapterDigest}`,
         ].join("\n\n"),
       },
     ],
     responseSchema: PRACTICE_SCHEMA,
-    maxOutputTokens: 2400,
+    maxOutputTokens: 2600,
     temperature: 0.3,
   });
 
@@ -620,7 +937,8 @@ async function generateMultiStepWithGemini(params: {
       back: fc.back.trim(),
     }));
 
-  const quiz: QuizItem[] = (practice?.quiz ?? [])
+  const quizFromChapterChecks = extractQuizFromChapterDetails(chapterDetails);
+  const quizFromPractice: QuizItem[] = (practice?.quiz ?? [])
     .filter(
       (q) =>
         q.question?.trim() &&
@@ -643,6 +961,15 @@ async function generateMultiStepWithGemini(params: {
       };
     });
 
+  const quiz: QuizItem[] = [];
+  const seenQuiz = new Set<string>();
+  for (const qItem of [...quizFromChapterChecks, ...quizFromPractice]) {
+    const key = qItem.question.toLowerCase();
+    if (seenQuiz.has(key)) continue;
+    seenQuiz.add(key);
+    quiz.push(qItem);
+  }
+
   // Tahap 4: Pemeriksaan & permintaan ulang parsial jika kartu atau soal kurang dari target
   const missingFlashcardsCount = Math.max(0, TARGET_FLASHCARDS - flashcards.length);
   const missingQuizCount = Math.max(0, TARGET_QUIZ - quiz.length);
@@ -657,7 +984,7 @@ async function generateMultiStepWithGemini(params: {
       userParts: [
         {
           text: [
-            `Topik: ${cleanTopicFromInput(outline?.title || params.topic) || params.topic}`,
+            `Topik: ${cleanTopic}`,
             `Ringkasan bab:\n${chapterDigest}`,
             `Flashcard yang sudah ada: ${flashcards.map((f) => f.front).join(" | ") || "-"}`,
             `Soal kuis yang sudah ada: ${quiz.map((q) => q.question).join(" | ") || "-"}`,
@@ -665,7 +992,7 @@ async function generateMultiStepWithGemini(params: {
         },
       ],
       responseSchema: PRACTICE_SCHEMA,
-      maxOutputTokens: 1800,
+      maxOutputTokens: 2000,
       temperature: 0.3,
     });
 
@@ -695,12 +1022,16 @@ async function generateMultiStepWithGemini(params: {
             q.correctIndex < cleanOpts.length
               ? q.correctIndex
               : 0;
-          quiz.push({
-            question: q.question.trim(),
-            options: cleanOpts,
-            correctIndex: validIdx,
-            explanation: (q.explanation || "").trim(),
-          });
+          const qKey = q.question.trim().toLowerCase();
+          if (!seenQuiz.has(qKey)) {
+            seenQuiz.add(qKey);
+            quiz.push({
+              question: q.question.trim(),
+              options: cleanOpts,
+              correctIndex: validIdx,
+              explanation: (q.explanation || "").trim(),
+            });
+          }
         }
       }
     }
@@ -723,9 +1054,6 @@ async function generateMultiStepWithGemini(params: {
     }
   }
 
-  const cleanTitle =
-    cleanTopicFromInput(outline?.title || params.topic) || params.fallbackNote.title;
-
   const branches =
     outline && Array.isArray(outline.mindmapBranches) && outline.mindmapBranches.length > 0
       ? outline.mindmapBranches
@@ -741,7 +1069,7 @@ async function generateMultiStepWithGemini(params: {
 
   return {
     ...params.fallbackNote,
-    title: cleanTitle,
+    title: cleanTopic,
     snippet: (outline?.snippet || params.fallbackNote.snippet).trim(),
     sourceInput:
       params.files.length > 0
@@ -752,7 +1080,7 @@ async function generateMultiStepWithGemini(params: {
     flashcards,
     quiz,
     mindmapRoot: {
-      label: cleanTitle.slice(0, 46),
+      label: cleanTopic.slice(0, 46),
       branches,
     },
   };
