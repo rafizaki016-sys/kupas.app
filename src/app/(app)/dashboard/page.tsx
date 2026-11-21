@@ -462,13 +462,14 @@ export default function DashboardPage() {
                 <FileText className="h-5 w-5" aria-hidden="true" />
               </div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-[#14181F]">
+              <p className="truncate text-sm font-bold text-[#14181F]">
                   {latestSet ? `Lanjutkan: ${latestSet.title}` : "Mulai buat catatan pertama"}
                 </p>
-                <p className
-                                  {latestSet ? `Bab 2 dari ${countChapters(latestSet.summary_markdown)}` : "Unggah PDF, slide, atau teks"}
+                <p className="text-xs text-[#6B7280]">
+                  {latestSet ? `Bab 2 dari ${countChapters(latestSet.summary_markdown)}` : "Unggah PDF, slide, atau teks"}
                 </p>
               </div>
+              
             </div>
 
             <span className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-[#2563EB]">
