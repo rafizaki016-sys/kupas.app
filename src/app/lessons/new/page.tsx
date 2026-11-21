@@ -1,24 +1,35 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type FormEvent,
+} from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   ArrowRight,
-  CheckCircle2,
+  FileSpreadsheet,
   FileText,
+  Film,
   Headphones,
+  Image as ImageIcon,
   Link2,
+  Presentation,
   Sparkles,
+  Upload,
+  X,
 } from "lucide-react";
 import {
   buildComprehensiveNoteFromSource,
   cleanTopicFromInput,
   upsertStudyNote,
-  type NoteKind,
   type StudyNote,
-} from "@/lib/kupas-store";
+} from "../../../lib/kupas-store";
 
 type SourceMode = "upload" | "record" | "link";
 
@@ -27,6 +38,9 @@ function normalizeSourceMode(raw: string | null): SourceMode {
   if (raw === "link") return "link";
   return "upload";
 }
+
+const ACCEPTED_EXTENSIONS =
+  ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt,.md,.json,.png,.jpg,.jpeg,.webp,.mp3,.wav,.m4a,.ogg,.mp4,.webm,.mov";
 
 function NewLessonContent() {
   const router = useRouter();
@@ -39,12 +53,12 @@ function NewLessonContent() {
   const [source, setSource] = useState<SourceMode>(initialSource);
   const [title, setTitle] = useState<string>(cleanedInitialQuery);
   const [content, setContent] = useState<string>(initialQuery);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
   const [creating, setCreating] = useState<boolean>(false);
-  const [statusMessage, setStatusMessage] = useState<{
-    type: "info" | "warning" | "error";
-    text: string;
-  } | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string>("");
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const triggeredQueryRef = useRef<string | null>(null);
   const isSubmittingRef = useRef<boolean>(false);
 
@@ -56,32 +70,71 @@ function NewLessonContent() {
     }
   }, [initialSource, initialQuery]);
 
-  async function handleCreate(rawQuery: string, rawSource: SourceMode, customTitle?: string) {
+  function addIncomingFiles(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0) return;
+    setErrorMsg("");
+
+    const incoming = Array.from(fileList);
+    setSelectedFiles((prev) => {
+      const merged = [...prev, ...incoming].slice(0, 5);
+      if (!title.trim() && merged[0]) {
+        const cleanName = cleanTopicFromInput(merged[0].name.replace(/\.[^/.]+$/, ""));
+        setTitle(cleanName);
+      }
+      return merged;
+    });
+  }
+
+  function removeFileAt(idx: number) {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function handleDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setIsDragging(false);
+    addIncomingFiles(e.dataTransfer.files);
+  }
+
+  async function handleCreate(params: {
+    rawQuery: string;
+    rawSource: SourceMode;
+    customTitle?: string;
+    files?: File[];
+  }) {
     if (isSubmittingRef.current) return;
-    const textValue = rawQuery.trim() || content.trim() || title.trim();
-    if (!textValue) {
-      setStatusMessage({
-        type: "error",
-        text: "Isi topik atau tempel catatan terlebih dahulu sebelum membuat materi.",
-      });
+
+    const filesToSend = params.files ?? selectedFiles;
+    const textValue = params.rawQuery.trim() || content.trim() || title.trim();
+
+    if (!textValue && filesToSend.length === 0) {
+      setErrorMsg("Pilih minimal 1 file atau isi topik/catatan terlebih dahulu.");
       return;
     }
 
-    const cleanTitle = cleanTopicFromInput((customTitle ?? title).trim() || textValue);
+    const fallbackTitleFromFile = filesToSend[0]
+      ? cleanTopicFromInput(filesToSend[0].name.replace(/\.[^/.]+$/, ""))
+      : "";
+    const cleanTitle =
+      cleanTopicFromInput((params.customTitle ?? title).trim() || textValue) ||
+      fallbackTitleFromFile ||
+      "Materi Belajar";
 
     isSubmittingRef.current = true;
     setCreating(true);
-    setStatusMessage(null);
+    setErrorMsg("");
 
     try {
+      const formData = new FormData();
+      formData.append("title", cleanTitle);
+      formData.append("content", textValue);
+      formData.append("source", params.rawSource);
+      for (const f of filesToSend.slice(0, 5)) {
+        formData.append("files", f);
+      }
+
       const res = await fetch("/api/generate-lesson", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: cleanTitle,
-          content: textValue,
-          source: rawSource,
-        }),
+        body: formData,
       });
 
       if (res.ok) {
@@ -95,30 +148,21 @@ function NewLessonContent() {
           router.push(`/lessons/${finalNote.id}`);
           return;
         }
-      } else {
-        const errData = (await res.json().catch(() => ({}))) as { error?: string };
-        setStatusMessage({
-          type: "warning",
-          text:
-            errData.error ||
-            "Layanan penyusun otomatis sedang tidak merespons — menggunakan penyusun materi lokal.",
-        });
       }
     } catch {
-      setStatusMessage({
-        type: "warning",
-        text: "Koneksi ke server terputus — materi disusun menggunakan penyusun lokal.",
-      });
+      // lanjut ke fallback lokal jika jaringan bermasalah
     }
 
+    const combinedQuery =
+      textValue || filesToSend.map((f) => f.name.replace(/\.[^/.]+$/, "")).join(", ");
     const fallbackNote = buildComprehensiveNoteFromSource({
-      source: rawSource,
-      query: textValue,
-      title: cleanTitle || textValue,
+      source: params.rawSource,
+      query: combinedQuery,
+      title: cleanTitle,
     });
     upsertStudyNote({
       ...fallbackNote,
-      title: cleanTitle || fallbackNote.title,
+      title: cleanTitle,
     });
     router.push(`/lessons/${fallbackNote.id}`);
   }
@@ -133,7 +177,12 @@ function NewLessonContent() {
 
     setCreating(true);
     const timer = setTimeout(() => {
-      void handleCreate(cleanQuery, initialSource, cleanTopicFromInput(cleanQuery));
+      void handleCreate({
+        rawQuery: cleanQuery,
+        rawSource: initialSource,
+        customTitle: cleanTopicFromInput(cleanQuery),
+        files: [],
+      });
     }, 350);
 
     return () => clearTimeout(timer);
@@ -142,50 +191,27 @@ function NewLessonContent() {
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
-    const combined = content.trim() || title.trim();
-    if (!combined) {
-      setStatusMessage({
-        type: "error",
-        text: "Isi judul topik atau tempel isi materi terlebih dahulu.",
-      });
-      return;
-    }
-    void handleCreate(combined, source, title.trim() || combined);
+    void handleCreate({
+      rawQuery: content.trim() || title.trim(),
+      rawSource: source,
+      customTitle: title.trim(),
+      files: selectedFiles,
+    });
   }
 
-  const kindMeta: Record<NoteKind, { label: string; hint: string; placeholder: string }> = {
-    pdf: {
-      label: "Teks & Berkas",
-      hint: "Berkas .txt, .md, dan .csv dibaca isinya secara otomatis. Untuk PDF/Word/Slide, tempel ringkasan teksnya di kolom bawah agar diurai tuntas.",
-      placeholder: "Contoh: Kalkulus — limit, turunan, dan integral",
-    },
-    audio: {
-      label: "Transkrip / Rekaman",
-      hint: "Tempel transkrip atau poin-poin penting dari rekaman kelas agar disusun menjadi bab, flashcard, dan kuis.",
-      placeholder: "Contoh: Ringkasan rekaman kuliah struktur data",
-    },
-    youtube: {
-      label: "Tautan / Topik Video",
-      hint: "Tempel tautan YouTube/artikel atau tulis ringkasan poin video agar disusun menjadi pelajaran.",
-      placeholder: "Tempel tautan YouTube atau artikel di sini...",
-    },
-    text: {
-      label: "Teks & Berkas",
-      hint: "Ketik topik atau tempel catatan pelajaran.",
-      placeholder: "Ketik topik pelajaran...",
-    },
-    slide: {
-      label: "Teks & Berkas",
-      hint: "Tempel materi slide.",
-      placeholder: "Ketik materi slide...",
-    },
-  };
-
-  const activeKind: NoteKind =
-    source === "record" ? "audio" : source === "link" ? "youtube" : "pdf";
+  const formatBadges = [
+    { label: "PDF", icon: FileText, color: "text-rose-600" },
+    { label: "Word", icon: FileText, color: "text-blue-600" },
+    { label: "Slides", icon: Presentation, color: "text-orange-600" },
+    { label: "Excel", icon: FileSpreadsheet, color: "text-emerald-600" },
+    { label: "Teks", icon: FileText, color: "text-slate-600" },
+    { label: "Gambar", icon: ImageIcon, color: "text-violet-600" },
+    { label: "Audio", icon: Headphones, color: "text-amber-600" },
+    { label: "Video", icon: Film, color: "text-sky-600" },
+  ];
 
   return (
-    <main className="mx-auto max-w-[820px] space-y-6 px-4 py-8 sm:px-6">
+    <main className="mx-auto max-w-[860px] space-y-6 px-4 py-8 sm:px-6">
       <div className="flex items-center justify-between">
         <Link
           href="/dashboard"
@@ -194,7 +220,7 @@ function NewLessonContent() {
           <span>← Kembali ke Beranda</span>
         </Link>
         <span className="rounded-full border-[1.5px] border-[#1d2433] bg-[#dfe8ff] px-3 py-1 text-xs font-bold text-[#1d2433]">
-          {kindMeta[activeKind].label}
+          Multi-Format Materi
         </span>
       </div>
 
@@ -204,10 +230,15 @@ function NewLessonContent() {
             <Sparkles className="h-5 w-5 animate-pulse" aria-hidden="true" />
           </div>
           <h1 className="mt-4 text-xl font-extrabold text-[#1d2433]">
-            Mengurai materi menjadi bab, catatan, kuis, dan flashcard...
+            Membaca &amp; mengurai materi menjadi bab, catatan, kuis, dan flashcard...
           </h1>
           <p className="mt-1.5 text-sm text-[#5d6578]">
-            Topik: <strong className="text-[#1d2433]">{cleanedInitialQuery || title}</strong>
+            Sumber:{" "}
+            <strong className="text-[#1d2433]">
+              {selectedFiles.length > 0
+                ? selectedFiles.map((f) => f.name).join(", ")
+                : cleanedInitialQuery || title}
+            </strong>
           </p>
         </div>
       ) : (
@@ -220,36 +251,29 @@ function NewLessonContent() {
               Buat Materi Belajar Baru
             </p>
             <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-[#1d2433]">
-              {kindMeta[activeKind].label}
+              Unggah File atau Masukkan Topik
             </h1>
-            <p className="mt-1 text-sm text-[#5d6578]">{kindMeta[activeKind].hint}</p>
+            <p className="mt-1 text-sm text-[#5d6578]">
+              Mendukung dokumen kuliah, slide presentasi, gambar catatan, rekaman audio, maupun video pembelajaran.
+            </p>
           </div>
 
-          {statusMessage && (
+          {errorMsg && (
             <div
-              role="status"
-              className={`flex items-start gap-2.5 rounded-xl border-[1.5px] p-3.5 text-xs font-semibold ${
-                statusMessage.type === "error"
-                  ? "border-rose-700 bg-rose-50 text-rose-950"
-                  : statusMessage.type === "warning"
-                    ? "border-amber-700 bg-amber-50 text-amber-950"
-                    : "border-[#1e4fd8] bg-[#dfe8ff] text-[#1d2433]"
-              }`}
+              role="alert"
+              className="flex items-start gap-2.5 rounded-xl border-[1.5px] border-rose-700 bg-rose-50 p-3.5 text-xs font-semibold text-rose-950"
             >
-              {statusMessage.type === "info" ? (
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#1e4fd8]" aria-hidden="true" />
-              ) : (
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              )}
-              <span>{statusMessage.text}</span>
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>{errorMsg}</span>
             </div>
           )}
 
+          {/* Mode Pills */}
           <div className="flex flex-wrap gap-2">
             {[
-              { id: "upload" as SourceMode, label: "Teks & Berkas", icon: FileText },
-              { id: "record" as SourceMode, label: "Transkrip / Rekaman", icon: Headphones },
-              { id: "link" as SourceMode, label: "Tautan / Video", icon: Link2 },
+              { id: "upload" as SourceMode, label: "Unggah File", icon: Upload },
+              { id: "record" as SourceMode, label: "Rekam / Audio", icon: Headphones },
+              { id: "link" as SourceMode, label: "YouTube / Tautan", icon: Link2 },
             ].map((tab) => {
               const Icon = tab.icon;
               const selected = source === tab.id;
@@ -259,12 +283,12 @@ function NewLessonContent() {
                   type="button"
                   onClick={() => {
                     setSource(tab.id);
-                    setStatusMessage(null);
+                    setErrorMsg("");
                   }}
                   className={`inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-[#1d2433] px-3.5 py-1.5 text-xs font-bold transition ${
                     selected
-                      ? "bg-[#1d2433] text-[#faf6ee]"
-                      : "bg-white text-[#1d2433] hover:bg-[#dfe8ff]"
+                      ? "bg-[#dfe8ff] text-[#1e4fd8]"
+                      : "bg-white text-[#1d2433] hover:bg-[#faf6ee]"
                   }`}
                 >
                   <Icon className="h-3.5 w-3.5" aria-hidden="true" />
@@ -274,52 +298,87 @@ function NewLessonContent() {
             })}
           </div>
 
-          {source === "upload" && (
-            <div className="rounded-xl border-[1.5px] border-dashed border-[#1d2433] bg-[#faf6ee] p-4">
-              <label htmlFor="file-upload" className="block text-xs font-bold text-[#1d2433]">
-                Unggah berkas teks (.txt, .md, .csv, .json) untuk pembacaan otomatis
-              </label>
-              <input
-                id="file-upload"
-                type="file"
-                accept=".txt,.md,.markdown,.csv,.json,.pdf,.doc,.docx,.ppt,.pptx"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  const cleanName = cleanTopicFromInput(file.name.replace(/\.[^/.]+$/, ""));
-                  setTitle(cleanName);
+          {/* Drag & Drop Multi-Format Box */}
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDragging(true);
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={`cursor-pointer rounded-2xl border-2 border-dashed p-6 text-center transition ${
+              isDragging
+                ? "border-[#1e4fd8] bg-[#dfe8ff]/60"
+                : "border-[#9ebcf7] bg-[#fafcff] hover:border-[#1e4fd8]"
+            }`}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ACCEPTED_EXTENSIONS}
+              onChange={(e) => addIncomingFiles(e.target.files)}
+              className="hidden"
+            />
 
-                  const isTextLike =
-                    /\.(txt|md|markdown|csv|json|log|ts|tsx|js|jsx|py|html|xml)$/i.test(file.name) ||
-                    file.type.startsWith("text/");
+            <div className="mx-auto grid h-11 w-11 place-items-center rounded-full bg-[#e6f0ff] text-[#1e4fd8]">
+              <Upload className="h-5 w-5" aria-hidden="true" />
+            </div>
 
-                  if (isTextLike) {
-                    try {
-                      const textBody = await file.text();
-                      if (textBody.trim()) {
-                        setContent(textBody.slice(0, 8000));
-                        setStatusMessage({
-                          type: "info",
-                          text: `Isi berkas "${file.name}" (${Math.min(
-                            textBody.trim().length,
-                            8000,
-                          )} karakter) berhasil dimuat.`,
-                        });
-                        return;
-                      }
-                    } catch {
-                      // lanjut ke pesan peringatan di bawah
-                    }
-                  }
+            <p className="mt-3 text-sm font-bold text-[#1d2433]">
+              Lepas file di sini, atau{" "}
+              <span className="text-[#1e4fd8] underline">klik untuk pilih</span>
+            </p>
+            <p className="mt-1 text-xs text-[#6e7687]">
+              Maks 5 file · dokumen 100 MB · gambar 25 MB · audio/video 1 GB · maks 3 jam
+            </p>
 
-                  setContent((prev) => prev || cleanName);
-                  setStatusMessage({
-                    type: "warning",
-                    text: `Berkas "${file.name}" berformat biner sehingga isinya belum diekstraksi otomatis. Tempel teks atau ringkasan dari berkas tersebut ke kolom isi materi di bawah agar pembahasannya lengkap.`,
-                  });
-                }}
-                className="mt-2 block w-full text-xs text-[#5d6578]"
-              />
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              {formatBadges.map((b) => {
+                const Icon = b.icon;
+                return (
+                  <span
+                    key={b.label}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8f0] bg-white px-3 py-1 text-[11px] font-bold text-[#1d2433] shadow-2xs"
+                  >
+                    <Icon className={`h-3.5 w-3.5 ${b.color}`} aria-hidden="true" />
+                    <span>{b.label}</span>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Selected Files List */}
+          {selectedFiles.length > 0 && (
+            <div className="space-y-2 rounded-xl border border-[#d5cdc0] bg-[#faf6ee] p-3.5">
+              <p className="text-[11px] font-extrabold uppercase tracking-wider text-[#6e7687]">
+                File Terpilih ({selectedFiles.length}/5)
+              </p>
+              <ul className="space-y-1.5">
+                {selectedFiles.map((file, idx) => (
+                  <li
+                    key={`${file.name}-${idx}`}
+                    className="flex items-center justify-between rounded-lg border border-[#e5ddd0] bg-white px-3 py-2 text-xs"
+                  >
+                    <span className="truncate font-semibold text-[#1d2433]">
+                      {file.name}{" "}
+                      <span className="font-normal text-[#6e7687]">
+                        ({Math.max(1, Math.round(file.size / 1024))} KB)
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Hapus ${file.name}`}
+                      onClick={() => removeFileAt(idx)}
+                      className="ml-2 rounded-md p-1 text-[#6e7687] hover:bg-rose-50 hover:text-rose-700"
+                    >
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
@@ -332,41 +391,29 @@ function NewLessonContent() {
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder={kindMeta[activeKind].placeholder}
+              placeholder="Otomatis terisi dari nama file, atau ketik topik pelajaran..."
               className="mt-1.5 w-full rounded-xl border-[1.5px] border-[#1d2433] bg-white px-4 py-2.5 text-sm text-[#1d2433] focus:outline-none focus:ring-2 focus:ring-[#1e4fd8]"
             />
           </div>
 
           <div>
             <label htmlFor="lesson-content" className="block text-xs font-bold uppercase text-[#1d2433]">
-              {source === "link"
-                ? "Tautan YouTube / Artikel atau Poin Materi"
-                : "Isi Materi / Catatan / Transkrip"}
+              Catatan Tambahan / Tautan (Opsional bila sudah unggah file)
             </label>
             <textarea
               id="lesson-content"
-              rows={5}
+              rows={3}
               value={content}
-              onChange={(e) => {
-                const val = e.target.value;
-                setContent(val);
-                if (!title.trim() && val.trim()) {
-                  setTitle(cleanTopicFromInput(val));
-                }
-              }}
-              placeholder={
-                source === "link"
-                  ? "Tempel tautan YouTube/artikel atau salin ringkasan poin utamanya di sini..."
-                  : "Tempel catatan, paragraf materi, atau transkrip di sini..."
-              }
-              className="mt-1.5 w-full rounded-xl border-[1.5px] border-[#1d2433] bg-white p-4 text-sm text-[#1d2433] focus:outline-none focus:ring-2 focus:ring-[#1e4fd8]"
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="Tempel tautan YouTube, catatan tambahan, atau fokus bab yang ingin dipelajari..."
+              className="mt-1.5 w-full rounded-xl border-[1.5px] border-[#1d2433] bg-white p-3.5 text-sm text-[#1d2433] focus:outline-none focus:ring-2 focus:ring-[#1e4fd8]"
             />
           </div>
 
           <div className="flex justify-end">
             <button
               type="submit"
-              disabled={!content.trim() && !title.trim()}
+              disabled={!content.trim() && !title.trim() && selectedFiles.length === 0}
               className="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#1d2433] bg-[#1e4fd8] px-5 py-2.5 text-sm font-bold text-white shadow-[3px_3px_0_#1d2433] transition disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none"
             >
               <span>Buat &amp; Mulai Belajar</span>
@@ -383,7 +430,7 @@ export default function NewLessonPage() {
   return (
     <Suspense
       fallback={
-        <main className="mx-auto max-w-[820px] px-4 py-10">
+        <main className="mx-auto max-w-[860px] px-4 py-10">
           <p className="text-sm font-semibold text-[#5d6578]">Memuat pembuat materi...</p>
         </main>
       }
