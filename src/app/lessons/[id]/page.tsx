@@ -18,14 +18,14 @@ import {
   Share2,
   Sparkles,
 } from "lucide-react";
-import ChapterRunner from "@/components/lessons/ChapterRunner";
-import RadialMindmap from "@/components/lessons/RadialMindmap";
+import ChapterRunner from "../../../components/lessons/ChapterRunner";
+import RadialMindmap from "../../../components/lessons/RadialMindmap";
 import {
   DEFAULT_NOTES,
   readStoredNotes,
   upsertStudyNote,
   type StudyNote,
-} from "@/lib/kupas-store";
+} from "../../../lib/kupas-store";
 
 type WorkspaceTab = "belajar" | "catatan" | "peta" | "kuis" | "kartu" | "sumber" | "tanya";
 
