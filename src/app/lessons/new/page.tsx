@@ -3,23 +3,33 @@
 import { Suspense, useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, BookOpen, FileText, Headphones, Link2, Sparkles } from "lucide-react";
+import { ArrowRight, FileText, Headphones, Link2, Sparkles } from "lucide-react";
 import {
+  cleanTopicFromInput,
   generateStudyNoteFromInput,
   upsertStudyNote,
   type NoteKind,
   type StudyNote,
 } from "@/lib/kupas-store";
 
+type SourceMode = "upload" | "record" | "link";
+
+function normalizeSourceMode(raw: string | null): SourceMode {
+  if (raw === "record") return "record";
+  if (raw === "link") return "link";
+  return "upload";
+}
+
 function NewLessonContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const initialSource = searchParams.get("source") || "text";
+  const initialSource = normalizeSourceMode(searchParams.get("source"));
   const initialQuery = searchParams.get("q") || "";
+  const cleanedInitialQuery = cleanTopicFromInput(initialQuery);
 
-  const [source, setSource] = useState<string>(initialSource);
-  const [title, setTitle] = useState<string>(initialQuery);
+  const [source, setSource] = useState<SourceMode>(initialSource);
+  const [title, setTitle] = useState<string>(cleanedInitialQuery);
   const [content, setContent] = useState<string>(initialQuery);
   const [creating, setCreating] = useState<boolean>(false);
 
@@ -29,15 +39,17 @@ function NewLessonContent() {
   useEffect(() => {
     setSource(initialSource);
     if (initialQuery) {
-      setTitle(initialQuery);
+      setTitle(cleanTopicFromInput(initialQuery));
       setContent(initialQuery);
     }
   }, [initialSource, initialQuery]);
 
-  async function handleCreate(rawQuery: string, rawSource: string, customTitle?: string) {
+  async function handleCreate(rawQuery: string, rawSource: SourceMode, customTitle?: string) {
     if (isSubmittingRef.current) return;
     const textValue = rawQuery.trim() || content.trim() || title.trim();
     if (!textValue) return;
+
+    const cleanTitle = cleanTopicFromInput((customTitle ?? title).trim() || textValue);
 
     isSubmittingRef.current = true;
     setCreating(true);
@@ -47,7 +59,7 @@ function NewLessonContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: (customTitle ?? title).trim() || textValue,
+          title: cleanTitle,
           content: textValue,
           source: rawSource,
         }),
@@ -56,8 +68,12 @@ function NewLessonContent() {
       if (res.ok) {
         const data = (await res.json()) as { note?: StudyNote };
         if (data.note) {
-          upsertStudyNote(data.note);
-          router.push(`/lessons/${data.note.id}`);
+          const finalNote: StudyNote = {
+            ...data.note,
+            title: cleanTitle || data.note.title,
+          };
+          upsertStudyNote(finalNote);
+          router.push(`/lessons/${finalNote.id}`);
           return;
         }
       }
@@ -67,9 +83,12 @@ function NewLessonContent() {
 
     const fallbackNote = generateStudyNoteFromInput({
       source: rawSource,
-      query: textValue,
+      query: cleanTitle || textValue,
     });
-    upsertStudyNote(fallbackNote);
+    upsertStudyNote({
+      ...fallbackNote,
+      title: cleanTitle || fallbackNote.title,
+    });
     router.push(`/lessons/${fallbackNote.id}`);
   }
 
@@ -83,7 +102,7 @@ function NewLessonContent() {
 
     setCreating(true);
     const timer = setTimeout(() => {
-      void handleCreate(cleanQuery, initialSource, cleanQuery);
+      void handleCreate(cleanQuery, initialSource, cleanTopicFromInput(cleanQuery));
     }, 350);
 
     return () => clearTimeout(timer);
@@ -97,37 +116,36 @@ function NewLessonContent() {
     void handleCreate(combined, source, title.trim() || combined);
   }
 
-  const kindBadge: Record<NoteKind, { label: string; hint: string }> = {
-    text: {
-      label: "Teks / Topik",
-      hint: "Ketik topik atau tempel ringkasan materi pelajaran.",
-    },
+  const kindMeta: Record<NoteKind, { label: string; hint: string; placeholder: string }> = {
     pdf: {
-      label: "Dokumen / Unggah",
-      hint: "Masukkan judul atau isi ringkasan dokumen yang ingin dipelajari.",
-    },
-    slide: {
-      label: "Slide Presentasi",
-      hint: "Masukkan poin slide kuliah atau presentasi.",
+      label: "Unggah",
+      hint: "Pilih berkas (PDF, Word, Slide, Excel, Teks, Gambar, Audio, Video) atau tulis topik/materi.",
+      placeholder: "Contoh: Matematika Diskrit — himpunan, relasi, dan graf",
     },
     audio: {
-      label: "Rekam / Audio",
-      hint: "Masukkan topik atau transkrip singkat rekaman kelas.",
+      label: "Rekam",
+      hint: "Masukkan topik atau ringkasan singkat dari rekaman kelas/suara.",
+      placeholder: "Contoh: Ringkasan rekaman kuliah struktur data",
     },
     youtube: {
-      label: "Tautan / YouTube",
-      hint: "Tempel tautan video/artikel atau topik video yang ingin dipelajari.",
+      label: "YouTube / Tautan",
+      hint: "Tempel tautan YouTube atau artikel web — judul topik akan dirapikan otomatis.",
+      placeholder: "Tempel tautan YouTube atau artikel di sini...",
+    },
+    text: {
+      label: "Unggah",
+      hint: "Ketik topik atau materi pelajaran.",
+      placeholder: "Ketik topik pelajaran...",
+    },
+    slide: {
+      label: "Unggah",
+      hint: "Masukkan materi slide.",
+      placeholder: "Ketik materi slide...",
     },
   };
 
   const activeKind: NoteKind =
-    source === "record"
-      ? "audio"
-      : source === "upload"
-        ? "pdf"
-        : source === "link"
-          ? "youtube"
-          : "text";
+    source === "record" ? "audio" : source === "link" ? "youtube" : "pdf";
 
   return (
     <main className="mx-auto max-w-[820px] space-y-6 px-4 py-8 sm:px-6">
@@ -139,7 +157,7 @@ function NewLessonContent() {
           <span>← Kembali ke Beranda</span>
         </Link>
         <span className="rounded-full border-[1.5px] border-[#1d2433] bg-[#dfe8ff] px-3 py-1 text-xs font-bold text-[#1d2433]">
-          {kindBadge[activeKind].label}
+          {kindMeta[activeKind].label}
         </span>
       </div>
 
@@ -149,10 +167,10 @@ function NewLessonContent() {
             <Sparkles className="h-5 w-5 animate-pulse" aria-hidden="true" />
           </div>
           <h1 className="mt-4 text-xl font-extrabold text-[#1d2433]">
-            Menyusun catatan, kartu hafalan, dan kuis...
+            Menyusun bab, catatan, kuis, dan flashcard...
           </h1>
           <p className="mt-1.5 text-sm text-[#5d6578]">
-            Topik: <strong className="text-[#1d2433]">{initialQuery || title}</strong>
+            Topik: <strong className="text-[#1d2433]">{cleanedInitialQuery || title}</strong>
           </p>
         </div>
       ) : (
@@ -165,17 +183,16 @@ function NewLessonContent() {
               Buat Materi Belajar Baru
             </p>
             <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-[#1d2433]">
-              {kindBadge[activeKind].label}
+              {kindMeta[activeKind].label}
             </h1>
-            <p className="mt-1 text-sm text-[#5d6578]">{kindBadge[activeKind].hint}</p>
+            <p className="mt-1 text-sm text-[#5d6578]">{kindMeta[activeKind].hint}</p>
           </div>
 
           <div className="flex flex-wrap gap-2">
             {[
-              { id: "text", label: "Teks / Topik", icon: BookOpen },
-              { id: "upload", label: "Unggah / Dokumen", icon: FileText },
-              { id: "link", label: "Tautan", icon: Link2 },
-              { id: "record", label: "Rekam / Audio", icon: Headphones },
+              { id: "upload" as SourceMode, label: "Unggah", icon: FileText },
+              { id: "record" as SourceMode, label: "Rekam", icon: Headphones },
+              { id: "link" as SourceMode, label: "YouTube / Tautan", icon: Link2 },
             ].map((tab) => {
               const Icon = tab.icon;
               const selected = source === tab.id;
@@ -197,6 +214,27 @@ function NewLessonContent() {
             })}
           </div>
 
+          {source === "upload" && (
+            <div className="rounded-xl border-[1.5px] border-dashed border-[#1d2433] bg-[#faf6ee] p-4">
+              <label htmlFor="file-upload" className="block text-xs font-bold text-[#1d2433]">
+                Pilih berkas (PDF, Word, Slide, Excel, Teks, Gambar, Audio, Video)
+              </label>
+              <input
+                id="file-upload"
+                type="file"
+                accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,image/*,audio/*,video/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const cleanName = cleanTopicFromInput(file.name.replace(/\.[^/.]+$/, ""));
+                  setTitle(cleanName);
+                  setContent((prev) => prev || cleanName);
+                }}
+                className="mt-2 block w-full text-xs text-[#5d6578]"
+              />
+            </div>
+          )}
+
           <div>
             <label htmlFor="lesson-title" className="block text-xs font-bold uppercase text-[#1d2433]">
               Judul atau Topik
@@ -206,21 +244,31 @@ function NewLessonContent() {
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Contoh: Logika Matematika — proposisi dan tabel kebenaran"
+              placeholder={kindMeta[activeKind].placeholder}
               className="mt-1.5 w-full rounded-xl border-[1.5px] border-[#1d2433] bg-white px-4 py-2.5 text-sm text-[#1d2433] focus:outline-none focus:ring-2 focus:ring-[#1e4fd8]"
             />
           </div>
 
           <div>
             <label htmlFor="lesson-content" className="block text-xs font-bold uppercase text-[#1d2433]">
-              Isi Materi / Tautan / Catatan Singkat
+              {source === "link" ? "Tautan YouTube / Artikel atau Topik" : "Isi Materi / Catatan Singkat"}
             </label>
             <textarea
               id="lesson-content"
-              rows={5}
+              rows={4}
               value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="Tempel catatan, ringkasan bab, atau tautan di sini..."
+              onChange={(e) => {
+                const val = e.target.value;
+                setContent(val);
+                if (!title.trim() && val.trim()) {
+                  setTitle(cleanTopicFromInput(val));
+                }
+              }}
+              placeholder={
+                source === "link"
+                  ? "Tempel tautan YouTube atau artikel web di sini..."
+                  : "Tempel catatan, ringkasan bab, atau topik di sini..."
+              }
               className="mt-1.5 w-full rounded-xl border-[1.5px] border-[#1d2433] bg-white p-4 text-sm text-[#1d2433] focus:outline-none focus:ring-2 focus:ring-[#1e4fd8]"
             />
           </div>
