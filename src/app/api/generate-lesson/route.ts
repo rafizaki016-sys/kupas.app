@@ -2,32 +2,179 @@ import { NextResponse } from "next/server";
 import {
   buildRichSubjectNote,
   cleanTopicFromInput,
+  type ChapterItem,
+  type FlashcardItem,
+  type QuizItem,
   type StudyNote,
 } from "../../../lib/kupas-store";
 
-type GeminiGeneratedPayload = {
-  title?: string;
-  snippet?: string;
-  chapters?: {
-    title?: string;
-    summary?: string;
-    points?: string[];
-  }[];
-  flashcards?: {
-    front?: string;
-    back?: string;
-  }[];
-  quiz?: {
-    question?: string;
-    options?: string[];
-    correctIndex?: number;
-    explanation?: string;
-  }[];
-  mindmapBranches?: {
-    title?: string;
-    detail?: string;
+type OutlineChapter = {
+  chapterIndex: number;
+  title: string;
+  learningObjectives: string[];
+  keyConcepts: string[];
+};
+
+type OutlinePayload = {
+  title: string;
+  snippet: string;
+  chapters: OutlineChapter[];
+  mindmapBranches: { title: string; detail: string }[];
+};
+
+type ChapterDetailPayload = {
+  title: string;
+  summary: string;
+  points: string[];
+  formulaOrHighlight: string;
+  example: string;
+};
+
+type PracticePayload = {
+  flashcards: { front: string; back: string }[];
+  quiz: {
+    question: string;
+    options: string[];
+    correctIndex: number;
+    explanation: string;
   }[];
 };
+
+const MIN_CHAPTERS = 6;
+const MAX_CHAPTERS = 10;
+const TARGET_FLASHCARDS = 6;
+const TARGET_QUIZ = 5;
+
+const GEMINI_MODEL = "gemini-2.5-flash";
+
+// Skema JSON (responseSchema) Tahap 1: Kerangka Kurikulum (6 - 10 Bab)
+const OUTLINE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    title: { type: "STRING" },
+    snippet: { type: "STRING" },
+    chapters: {
+      type: "ARRAY",
+      minItems: MIN_CHAPTERS,
+      maxItems: MAX_CHAPTERS,
+      items: {
+        type: "OBJECT",
+        properties: {
+          chapterIndex: { type: "INTEGER" },
+          title: { type: "STRING" },
+          learningObjectives: {
+            type: "ARRAY",
+            minItems: 2,
+            maxItems: 3,
+            items: { type: "STRING" },
+          },
+          keyConcepts: {
+            type: "ARRAY",
+            minItems: 1,
+            items: { type: "STRING" },
+          },
+        },
+        required: ["chapterIndex", "title", "learningObjectives", "keyConcepts"],
+      },
+    },
+    mindmapBranches: {
+      type: "ARRAY",
+      minItems: 3,
+      items: {
+        type: "OBJECT",
+        properties: {
+          title: { type: "STRING" },
+          detail: { type: "STRING" },
+        },
+        required: ["title", "detail"],
+      },
+    },
+  },
+  required: ["title", "snippet", "chapters", "mindmapBranches"],
+};
+
+// Skema JSON (responseSchema) Tahap 2: Isi Detail Satu Bab
+const CHAPTER_DETAIL_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    title: { type: "STRING" },
+    summary: { type: "STRING" },
+    points: {
+      type: "ARRAY",
+      minItems: 3,
+      items: { type: "STRING" },
+    },
+    formulaOrHighlight: { type: "STRING" },
+    example: { type: "STRING" },
+  },
+  required: ["title", "summary", "points", "formulaOrHighlight", "example"],
+};
+
+// Skema JSON (responseSchema) Tahap 3: Kartu Hafalan & Kuis
+const PRACTICE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    flashcards: {
+      type: "ARRAY",
+      minItems: TARGET_FLASHCARDS,
+      items: {
+        type: "OBJECT",
+        properties: {
+          front: { type: "STRING" },
+          back: { type: "STRING" },
+        },
+        required: ["front", "back"],
+      },
+    },
+    quiz: {
+      type: "ARRAY",
+      minItems: TARGET_QUIZ,
+      items: {
+        type: "OBJECT",
+        properties: {
+          question: { type: "STRING" },
+          options: {
+            type: "ARRAY",
+            minItems: 4,
+            maxItems: 4,
+            items: { type: "STRING" },
+          },
+          correctIndex: { type: "INTEGER" },
+          explanation: { type: "STRING" },
+        },
+        required: ["question", "options", "correctIndex", "explanation"],
+      },
+    },
+  },
+  required: ["flashcards", "quiz"],
+};
+
+// Prompt Tahap 1: Perancang Kurikulum (Kerangka 6 - 10 Bab)
+const OUTLINE_SYSTEM_INSTRUCTION = [
+  "Kamu perancang kurikulum.",
+  "Dari materi di bawah, buat KERANGKA belajar.",
+  "Aturan:",
+  "- Cakup SEMUA bagian materi, urut dari bagian awal sampai akhir. Jangan melewatkan bagian.",
+  `- ${MIN_CHAPTERS} sampai ${MAX_CHAPTERS} bab. Tiap bab punya judul, tujuan belajar (2-3 butir), dan daftar konsep kunci yang harus dibahas.`,
+  '- Jangan menambah fakta yang tidak ada di materi. Kalau materi hanya topik singkat, lengkapi dengan pengetahuan umum yang akurat dan tandai "dari luar materi".',
+  "- Keluaran HANYA JSON sesuai skema.",
+].join("\n");
+
+// Prompt Tahap 2: Pengisian Detail Per Bab Secara Terpisah
+const CHAPTER_DETAIL_SYSTEM_INSTRUCTION = [
+  "Kamu adalah pengajar untuk aplikasi belajar Kupas.",
+  "Isi konten LENGKAP untuk SATU BAB spesifik berdasarkan kerangka bab dan materi sumber.",
+  "Gunakan bahasa Indonesia yang ringkas, jelas, dan mudah dipahami.",
+  'Jangan menambah fakta yang tidak ada di materi; bila melengkapi dengan pengetahuan umum karena materi singkat, beri tanda "dari luar materi".',
+  "Sertakan minimal 3 poin pembahasan yang berbeda satu sama lain, 1 rumus/sorotan kunci singkat, dan 1 contoh konkret.",
+].join("\n");
+
+// Prompt Tahap 3: Penyusunan Kartu Hafalan & Kuis
+const PRACTICE_SYSTEM_INSTRUCTION = [
+  "Kamu adalah penyusun latihan soal dan kartu hafalan untuk aplikasi belajar Kupas.",
+  "Buat kartu hafalan (flashcards) dan soal pilihan ganda (quiz) dalam bahasa Indonesia berdasarkan bab yang telah disusun.",
+  "Tiap soal kuis harus memiliki tepat 4 pilihan jawaban dan correctIndex antara 0 sampai 3, serta penjelasan singkat yang akurat.",
+].join("\n");
 
 function guessMimeType(file: File): string {
   if (file.type) return file.type;
@@ -65,45 +212,71 @@ function isPlainTextFile(file: File): boolean {
   );
 }
 
-async function generateWithGemini(params: {
+async function callGeminiStructured<T>(params: {
+  apiKey: string;
+  systemInstruction: string;
+  userParts: Array<
+    | { text: string }
+    | { inlineData: { mimeType: string; data: string } }
+  >;
+  responseSchema: Record<string, unknown>;
+  maxOutputTokens: number;
+  temperature: number;
+}): Promise<T | null> {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(
+    params.apiKey,
+  )}`;
+
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: {
+        parts: [{ text: params.systemInstruction }],
+      },
+      contents: [
+        {
+          role: "user",
+          parts: params.userParts,
+        },
+      ],
+      generationConfig: {
+        temperature: params.temperature,
+        maxOutputTokens: params.maxOutputTokens,
+        responseMimeType: "application/json",
+        responseSchema: params.responseSchema,
+      },
+    }),
+  });
+
+  if (!res.ok) return null;
+
+  const data = await res.json();
+  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  if (!rawText) return null;
+
+  try {
+    return JSON.parse(rawText) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function buildMediaAndTextParts(params: {
   topic: string;
   content: string;
   source?: string;
   files: File[];
-}): Promise<StudyNote | null> {
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
-  if (!apiKey || !apiKey.startsWith("AIza")) return null;
-
-  const systemPrompt = [
-    "Kamu adalah asisten pendidik untuk aplikasi belajar Kupas.",
-    "Tugasmu adalah membaca seluruh berkas (PDF, dokumen, gambar, audio, video) dan catatan yang diberikan, lalu menyusun materi pembelajaran dalam bahasa Indonesia yang RINGKAS, JELAS, dan MUDAH DIPAHAMI.",
-    "Kembalikan HANYA JSON valid dengan struktur:",
-    "{",
-    '  "title": "Judul topik bersih",',
-    '  "snippet": "Ringkasan 1-2 kalimat yang jelas dan mudah dipahami",',
-    '  "chapters": [',
-    '    { "title": "Bab 1 · ...", "summary": "Penjelasan ringkas dan jelas", "points": ["Poin 1", "Poin 2", "Poin 3"] }',
-    "  ],",
-    '  "flashcards": [{ "front": "Pertanyaan singkat", "back": "Jawaban jelas" }],',
-    '  "quiz": [{ "question": "Soal latihan", "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"], "correctIndex": 0, "explanation": "Penjelasan singkat" }],',
-    '  "mindmapBranches": [{ "title": "Cabang konsep", "detail": "Keterangan singkat" }]',
-    "}",
-  ].join("\n");
-
+}): Promise<
+  Array<
+    | { text: string }
+    | { inlineData: { mimeType: string; data: string } }
+  >
+> {
   const parts: Array<
     | { text: string }
     | { inlineData: { mimeType: string; data: string } }
-  > = [
-    {
-      text: [
-        `Topik: ${params.topic}`,
-        `Sumber: ${params.source || "upload"}`,
-        params.content ? `Catatan / Teks:\n${params.content.slice(0, 16000)}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
-    },
-  ];
+  > = [];
 
   for (const file of params.files.slice(0, 5)) {
     const mime = guessMimeType(file);
@@ -111,7 +284,7 @@ async function generateWithGemini(params: {
       const txt = await file.text();
       if (txt.trim()) {
         parts.push({
-          text: `Isi berkas "${file.name}":\n${txt.slice(0, 16000)}`,
+          text: `Berkas "${file.name}":\n"""\n${txt.slice(0, 14000)}\n"""`,
         });
       }
     } else if (isGeminiInlineSupported(mime) && file.size <= 20 * 1024 * 1024) {
@@ -129,113 +302,458 @@ async function generateWithGemini(params: {
     }
   }
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(
-    apiKey,
-  )}`;
+  const materialBlock = params.content.trim() || params.topic;
+  parts.push({
+    text: [
+      `Topik: ${params.topic}`,
+      `Jenis sumber: ${params.source || "upload"}`,
+      `Materi: """${materialBlock.slice(0, 16000)}"""`,
+    ].join("\n"),
+  });
 
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [{ text: systemPrompt }],
-      },
-      contents: [
-        {
-          role: "user",
-          parts,
-        },
+  return parts;
+}
+
+function expandChaptersToMinimum(
+  baseChapters: ChapterItem[],
+  topic: string,
+  minCount: number,
+): ChapterItem[] {
+  const result = [...baseChapters];
+  const fallbackTemplates: Array<{ title: string; summary: string; points: string[] }> = [
+    {
+      title: `Pengantar & Ruang Lingkup ${topic}`,
+      summary: `Memahami cakupan utama dan konteks dasar ${topic} secara runtut (dari luar materi).`,
+      points: [
+        `Mengenali batasan masalah dan istilah pokok pada ${topic} (dari luar materi).`,
+        "Menyusun kerangka berpikir sebelum masuk ke detail teknis.",
       ],
-      generationConfig: {
-        temperature: 0.4,
-        responseMimeType: "application/json",
-      },
-    }),
-  });
+    },
+    {
+      title: `Komponen & Struktur Utama ${topic}`,
+      summary: `Mengidentifikasi elemen-elemen pembentuk utama pada ${topic} (dari luar materi).`,
+      points: [
+        "Membedakan komponen inti dan komponen pendukung.",
+        "Memahami peran masing-masing bagian di dalam sistem.",
+      ],
+    },
+    {
+      title: `Mekanisme & Alur Kerja ${topic}`,
+      summary: `Menelusuri bagaimana proses atau aturan bekerja langkah demi langkah (dari luar materi).`,
+      points: [
+        "Mengurutkan tahapan proses dari kondisi awal hingga hasil.",
+        "Memperhatikan syarat atau prasyarat pada tiap langkah.",
+      ],
+    },
+    {
+      title: `Contoh & Studi Kasus ${topic}`,
+      summary: `Menerapkan konsep ${topic} pada contoh konkret agar mudah dipahami (dari luar materi).`,
+      points: [
+        "Menelaah contoh kasus sederhana sebelum kasus yang lebih kompleks.",
+        "Menghubungkan teori dengan hasil atau solusi yang diperoleh.",
+      ],
+    },
+    {
+      title: `Kesalahan Umum & Pencegahan pada ${topic}`,
+      summary: `Mengenali kekeliruan yang sering terjadi dan cara menghindarinya (dari luar materi).`,
+      points: [
+        "Menghindari lompatan logika atau pengabaian syarat awal.",
+        "Melakukan pengecekan ulang terhadap hasil akhir.",
+      ],
+    },
+    {
+      title: `Ringkasan & Strategi Penguasaan ${topic}`,
+      summary: `Merangkum poin-poin inti ${topic} untuk persiapan latihan dan evaluasi (dari luar materi).`,
+      points: [
+        "Menghubungkan kembali antarbab menjadi satu gambaran utuh.",
+        "Menguji pemahaman aktif melalui latihan soal dan kartu hafalan.",
+      ],
+    },
+  ];
 
-  if (!res.ok) return null;
+  let tplIdx = 0;
+  while (result.length < minCount) {
+    const sourceTpl = fallbackTemplates[tplIdx % fallbackTemplates.length];
+    const nextNum = result.length + 1;
+    result.push({
+      title: `Bab ${nextNum} · ${sourceTpl.title}`,
+      summary: sourceTpl.summary,
+      points: sourceTpl.points,
+    });
+    tplIdx += 1;
+  }
 
-  const data = await res.json();
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  if (!rawText) return null;
+  return result.slice(0, MAX_CHAPTERS);
+}
 
-  const parsed = JSON.parse(rawText) as GeminiGeneratedPayload;
-  const fallback = buildRichSubjectNote({
-    source: params.source,
-    query: params.content || params.topic,
-    title: params.topic,
-  });
+function normalizeChapterDetail(
+  detail: ChapterDetailPayload,
+  fallbackChapter: ChapterItem,
+  chapterIndex: number,
+  objectives: string[],
+): ChapterItem {
+  const rawTitle = (detail.title || fallbackChapter.title || `Bab ${chapterIndex + 1}`).trim();
+  const title = /^bab\s*\d+/i.test(rawTitle)
+    ? rawTitle
+    : `Bab ${chapterIndex + 1} · ${rawTitle}`;
+  const summary = (detail.summary || fallbackChapter.summary).trim();
 
-  const chapters =
-    Array.isArray(parsed.chapters) && parsed.chapters.length > 0
-      ? parsed.chapters
-          .map((ch, idx) => ({
-            title: (ch.title || `Bab ${idx + 1} · ${params.topic}`).trim(),
-            summary: (ch.summary || "").trim(),
-            points: Array.isArray(ch.points)
-              ? ch.points.map((p) => String(p).trim()).filter(Boolean)
-              : [],
-          }))
-          .filter((ch) => ch.summary.length > 0)
-      : fallback.chapters;
+  const extraItems: string[] = [];
+  if (objectives.length > 0) {
+    extraItems.push(`Tujuan belajar: ${objectives.join("; ")}`);
+  }
+  if (detail.formulaOrHighlight?.trim()) {
+    extraItems.push(`Inti / Rumus: ${detail.formulaOrHighlight.trim()}`);
+  }
+  if (detail.example?.trim()) {
+    extraItems.push(`Contoh: ${detail.example.trim()}`);
+  }
 
-  if (chapters.length === 0) return null;
+  const rawPoints = Array.isArray(detail.points)
+    ? detail.points.map((p) => String(p).trim()).filter(Boolean)
+    : [];
 
-  const flashcards =
-    Array.isArray(parsed.flashcards) && parsed.flashcards.length > 0
-      ? parsed.flashcards
-          .map((fc, idx) => ({
-            id: `${fallback.id}-fc-${idx + 1}`,
-            front: (fc.front || "").trim(),
-            back: (fc.back || "").trim(),
-          }))
-          .filter((fc) => fc.front && fc.back)
-      : fallback.flashcards;
-
-  const quiz =
-    Array.isArray(parsed.quiz) && parsed.quiz.length > 0
-      ? parsed.quiz
-          .map((q) => ({
-            question: (q.question || "").trim(),
-            options: Array.isArray(q.options)
-              ? q.options.map((o) => String(o).trim()).filter(Boolean)
-              : [],
-            correctIndex:
-              typeof q.correctIndex === "number" && q.correctIndex >= 0
-                ? q.correctIndex
-                : 0,
-            explanation: (q.explanation || "").trim(),
-          }))
-          .filter((q) => q.question && q.options.length >= 2)
-      : fallback.quiz;
-
-  const branches =
-    Array.isArray(parsed.mindmapBranches) && parsed.mindmapBranches.length > 0
-      ? parsed.mindmapBranches
-          .map((b) => ({
-            title: (b.title || "").trim(),
-            detail: (b.detail || "").trim(),
-          }))
-          .filter((b) => b.title)
-      : fallback.mindmapRoot.branches;
-
-  const cleanTitle = cleanTopicFromInput(parsed.title || params.topic);
+  const mergedPoints = Array.from(new Set([...rawPoints, ...extraItems]));
+  const points =
+    mergedPoints.length >= 2
+      ? mergedPoints
+      : Array.from(new Set([...mergedPoints, ...fallbackChapter.points]));
 
   return {
-    ...fallback,
-    title: cleanTitle || fallback.title,
-    snippet: (parsed.snippet || fallback.snippet).trim(),
+    title,
+    summary,
+    points,
+  };
+}
+
+async function generateMultiStepWithGemini(params: {
+  topic: string;
+  content: string;
+  source?: string;
+  files: File[];
+  fallbackNote: StudyNote;
+}): Promise<StudyNote | null> {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey || !apiKey.startsWith("AIza")) return null;
+
+  const baseParts = await buildMediaAndTextParts({
+    topic: params.topic,
+    content: params.content,
+    source: params.source,
+    files: params.files,
+  });
+
+  // Tahap 1: Buat kerangka belajar (6 - 10 bab)
+  const outline = await callGeminiStructured<OutlinePayload>({
+    apiKey,
+    systemInstruction: OUTLINE_SYSTEM_INSTRUCTION,
+    userParts: baseParts,
+    responseSchema: OUTLINE_SCHEMA,
+    maxOutputTokens: 2600,
+    temperature: 0.25,
+  });
+
+  const outlineChapters: OutlineChapter[] = Array.isArray(outline?.chapters)
+    ? outline.chapters
+        .filter((ch) => ch && typeof ch.title === "string" && ch.title.trim().length > 0)
+        .slice(0, MAX_CHAPTERS)
+        .map((ch, idx) => ({
+          chapterIndex: idx + 1,
+          title: ch.title.trim(),
+          learningObjectives: Array.isArray(ch.learningObjectives)
+            ? ch.learningObjectives.map((o) => String(o).trim()).filter(Boolean).slice(0, 3)
+            : [],
+          keyConcepts: Array.isArray(ch.keyConcepts)
+            ? ch.keyConcepts.map((k) => String(k).trim()).filter(Boolean)
+            : [],
+        }))
+    : [];
+
+  // Pemeriksaan Tahap 1: Jika jumlah bab kurang dari MIN_CHAPTERS, minta ulang hanya bab yang kurang
+  const missingOutlineCount = Math.max(0, MIN_CHAPTERS - outlineChapters.length);
+  if (missingOutlineCount > 0) {
+    const existingTitles = outlineChapters.map((c) => `${c.chapterIndex}. ${c.title}`);
+    const topUpOutline = await callGeminiStructured<OutlinePayload>({
+      apiKey,
+      systemInstruction: [
+        OUTLINE_SYSTEM_INSTRUCTION,
+        `Kerangka saat ini baru memiliki ${outlineChapters.length} bab.`,
+        `Tambahkan bab lanjutan berikutnya (mulai bab ke-${outlineChapters.length + 1}) agar total mencakup seluruh bagian materi secara berurutan.`,
+      ].join("\n"),
+      userParts: [
+        ...baseParts,
+        {
+          text: `Bab yang sudah ada:\n${existingTitles.join("\n") || "(belum ada)"}\nLanjutkan urutan bab berikutnya tanpa mengulang yang sudah ada.`,
+        },
+      ],
+      responseSchema: OUTLINE_SCHEMA,
+      maxOutputTokens: 2200,
+      temperature: 0.25,
+    });
+
+    if (Array.isArray(topUpOutline?.chapters)) {
+      for (const extraCh of topUpOutline.chapters) {
+        if (outlineChapters.length >= MAX_CHAPTERS) break;
+        const cleanChTitle = extraCh?.title?.trim();
+        if (!cleanChTitle) continue;
+        const isDuplicate = outlineChapters.some(
+          (c) => c.title.toLowerCase() === cleanChTitle.toLowerCase(),
+        );
+        if (!isDuplicate) {
+          outlineChapters.push({
+            chapterIndex: outlineChapters.length + 1,
+            title: cleanChTitle,
+            learningObjectives: Array.isArray(extraCh.learningObjectives)
+              ? extraCh.learningObjectives.map((o) => String(o).trim()).filter(Boolean).slice(0, 3)
+              : [],
+            keyConcepts: Array.isArray(extraCh.keyConcepts)
+              ? extraCh.keyConcepts.map((k) => String(k).trim()).filter(Boolean)
+              : [],
+          });
+        }
+      }
+    }
+  }
+
+  const expandedFallbackChapters = expandChaptersToMinimum(
+    params.fallbackNote.chapters,
+    params.topic,
+    Math.max(MIN_CHAPTERS, outlineChapters.length),
+  );
+
+  while (outlineChapters.length < MIN_CHAPTERS) {
+    const idx = outlineChapters.length;
+    const fb = expandedFallbackChapters[idx];
+    outlineChapters.push({
+      chapterIndex: idx + 1,
+      title: fb.title,
+      learningObjectives: [
+        `Memahami inti ${fb.title}`,
+        `Menerapkan konsep utama pada contoh`,
+      ],
+      keyConcepts: fb.points.slice(0, 2),
+    });
+  }
+
+  // Tahap 2: Isi tiap bab secara terpisah dengan permintaan per bab
+  const chapters: ChapterItem[] = [];
+  for (let i = 0; i < outlineChapters.length; i++) {
+    const chMeta = outlineChapters[i];
+    const fbChapter = expandedFallbackChapters[i] ?? expandedFallbackChapters[0];
+
+    const chapterPromptText = [
+      `Topik Utama: ${cleanTopicFromInput(outline?.title || params.topic) || params.topic}`,
+      `Bab ke-${i + 1} dari ${outlineChapters.length}: ${chMeta.title}`,
+      `Tujuan Belajar:\n${
+        chMeta.learningObjectives.length > 0
+          ? chMeta.learningObjectives.map((o, idx) => `${idx + 1}. ${o}`).join("\n")
+          : `- Memahami bahasan ${chMeta.title}`
+      }`,
+      `Konsep Kunci: ${chMeta.keyConcepts.join(", ") || chMeta.title}`,
+    ].join("\n");
+
+    let detail = await callGeminiStructured<ChapterDetailPayload>({
+      apiKey,
+      systemInstruction: CHAPTER_DETAIL_SYSTEM_INSTRUCTION,
+      userParts: [...baseParts, { text: chapterPromptText }],
+      responseSchema: CHAPTER_DETAIL_SCHEMA,
+      maxOutputTokens: 1500,
+      temperature: 0.3,
+    });
+
+    // Pemeriksaan Tahap 2: Jika detail bab masih kurang, minta ulang khusus bagian bab ini
+    if (!detail || !detail.summary || (detail.points?.length ?? 0) < 2) {
+      detail = await callGeminiStructured<ChapterDetailPayload>({
+        apiKey,
+        systemInstruction: `${CHAPTER_DETAIL_SYSTEM_INSTRUCTION}\nLengkapi poin pembahasan, rumus/sorotan, dan contoh untuk bab ini secara jelas.`,
+        userParts: [
+          ...baseParts,
+          {
+            text: `${chapterPromptText}\nCatatan: Pastikan summary jelas dan points berisi minimal 3 poin penting.`,
+          },
+        ],
+        responseSchema: CHAPTER_DETAIL_SCHEMA,
+        maxOutputTokens: 1500,
+        temperature: 0.25,
+      });
+    }
+
+    if (detail && detail.summary) {
+      chapters.push(
+        normalizeChapterDetail(detail, fbChapter, i, chMeta.learningObjectives),
+      );
+    } else {
+      chapters.push(fbChapter);
+    }
+  }
+
+  // Tahap 3: Buat kartu hafalan & soal kuis berdasarkan seluruh bab
+  const chapterDigest = chapters
+    .map(
+      (c, idx) =>
+        `${idx + 1}. ${c.title}: ${c.summary} Poin: ${c.points.slice(0, 2).join(" | ")}`,
+    )
+    .join("\n");
+
+  const practice = await callGeminiStructured<PracticePayload>({
+    apiKey,
+    systemInstruction: PRACTICE_SYSTEM_INSTRUCTION,
+    userParts: [
+      {
+        text: [
+          `Topik: ${cleanTopicFromInput(outline?.title || params.topic) || params.topic}`,
+          `Target minimal: ${TARGET_FLASHCARDS} kartu hafalan dan ${TARGET_QUIZ} soal kuis.`,
+          `Ringkasan bab:\n${chapterDigest}`,
+        ].join("\n\n"),
+      },
+    ],
+    responseSchema: PRACTICE_SCHEMA,
+    maxOutputTokens: 2400,
+    temperature: 0.3,
+  });
+
+  const flashcards: FlashcardItem[] = (practice?.flashcards ?? [])
+    .filter((fc) => fc.front?.trim() && fc.back?.trim())
+    .map((fc, idx) => ({
+      id: `${params.fallbackNote.id}-fc-${idx + 1}`,
+      front: fc.front.trim(),
+      back: fc.back.trim(),
+    }));
+
+  const quiz: QuizItem[] = (practice?.quiz ?? [])
+    .filter(
+      (q) =>
+        q.question?.trim() &&
+        Array.isArray(q.options) &&
+        q.options.filter(Boolean).length >= 2,
+    )
+    .map((q) => {
+      const cleanOpts = q.options.map((o) => String(o).trim()).filter(Boolean);
+      const validIdx =
+        typeof q.correctIndex === "number" &&
+        q.correctIndex >= 0 &&
+        q.correctIndex < cleanOpts.length
+          ? q.correctIndex
+          : 0;
+      return {
+        question: q.question.trim(),
+        options: cleanOpts,
+        correctIndex: validIdx,
+        explanation: (q.explanation || "").trim(),
+      };
+    });
+
+  // Tahap 4: Pemeriksaan & permintaan ulang parsial jika kartu atau soal kurang dari target
+  const missingFlashcardsCount = Math.max(0, TARGET_FLASHCARDS - flashcards.length);
+  const missingQuizCount = Math.max(0, TARGET_QUIZ - quiz.length);
+
+  if (missingFlashcardsCount > 0 || missingQuizCount > 0) {
+    const topUpPractice = await callGeminiStructured<PracticePayload>({
+      apiKey,
+      systemInstruction: [
+        PRACTICE_SYSTEM_INSTRUCTION,
+        `Tambahkan ${missingFlashcardsCount} kartu hafalan baru dan ${missingQuizCount} soal kuis baru yang belum ada sebelumnya.`,
+      ].join("\n"),
+      userParts: [
+        {
+          text: [
+            `Topik: ${cleanTopicFromInput(outline?.title || params.topic) || params.topic}`,
+            `Ringkasan bab:\n${chapterDigest}`,
+            `Flashcard yang sudah ada: ${flashcards.map((f) => f.front).join(" | ") || "-"}`,
+            `Soal kuis yang sudah ada: ${quiz.map((q) => q.question).join(" | ") || "-"}`,
+          ].join("\n\n"),
+        },
+      ],
+      responseSchema: PRACTICE_SCHEMA,
+      maxOutputTokens: 1800,
+      temperature: 0.3,
+    });
+
+    if (missingFlashcardsCount > 0 && Array.isArray(topUpPractice?.flashcards)) {
+      for (const fc of topUpPractice.flashcards) {
+        if (flashcards.length >= TARGET_FLASHCARDS) break;
+        if (fc.front?.trim() && fc.back?.trim()) {
+          flashcards.push({
+            id: `${params.fallbackNote.id}-fc-${flashcards.length + 1}`,
+            front: fc.front.trim(),
+            back: fc.back.trim(),
+          });
+        }
+      }
+    }
+
+    if (missingQuizCount > 0 && Array.isArray(topUpPractice?.quiz)) {
+      for (const q of topUpPractice.quiz) {
+        if (quiz.length >= TARGET_QUIZ) break;
+        const cleanOpts = Array.isArray(q.options)
+          ? q.options.map((o) => String(o).trim()).filter(Boolean)
+          : [];
+        if (q.question?.trim() && cleanOpts.length >= 2) {
+          const validIdx =
+            typeof q.correctIndex === "number" &&
+            q.correctIndex >= 0 &&
+            q.correctIndex < cleanOpts.length
+              ? q.correctIndex
+              : 0;
+          quiz.push({
+            question: q.question.trim(),
+            options: cleanOpts,
+            correctIndex: validIdx,
+            explanation: (q.explanation || "").trim(),
+          });
+        }
+      }
+    }
+  }
+
+  for (const fbFc of params.fallbackNote.flashcards) {
+    if (flashcards.length >= TARGET_FLASHCARDS) break;
+    if (!flashcards.some((f) => f.front === fbFc.front)) {
+      flashcards.push({
+        ...fbFc,
+        id: `${params.fallbackNote.id}-fc-${flashcards.length + 1}`,
+      });
+    }
+  }
+
+  for (const fbQ of params.fallbackNote.quiz) {
+    if (quiz.length >= TARGET_QUIZ) break;
+    if (!quiz.some((q) => q.question === fbQ.question)) {
+      quiz.push(fbQ);
+    }
+  }
+
+  const cleanTitle =
+    cleanTopicFromInput(outline?.title || params.topic) || params.fallbackNote.title;
+
+  const branches =
+    outline && Array.isArray(outline.mindmapBranches) && outline.mindmapBranches.length > 0
+      ? outline.mindmapBranches
+          .filter((b) => b.title?.trim())
+          .map((b) => ({
+            title: b.title.trim(),
+            detail: (b.detail || "").trim(),
+          }))
+      : chapters.slice(0, 6).map((ch) => ({
+          title: ch.title.replace(/^Bab\s*\d+\s*·\s*/i, ""),
+          detail: ch.summary,
+        }));
+
+  return {
+    ...params.fallbackNote,
+    title: cleanTitle,
+    snippet: (outline?.snippet || params.fallbackNote.snippet).trim(),
     sourceInput:
       params.files.length > 0
         ? params.files.map((f) => f.name).join(", ")
-        : fallback.sourceInput,
+        : params.fallbackNote.sourceInput,
     chapterCount: chapters.length,
     chapters,
-    flashcards: flashcards.length > 0 ? flashcards : fallback.flashcards,
-    quiz: quiz.length > 0 ? quiz : fallback.quiz,
+    flashcards,
+    quiz,
     mindmapRoot: {
-      label: (cleanTitle || fallback.title).slice(0, 46),
-      branches: branches.length > 0 ? branches : fallback.mindmapRoot.branches,
+      label: cleanTitle.slice(0, 46),
+      branches,
     },
   };
 }
@@ -274,7 +792,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Ekstrak isi file teks polos bila ada untuk memperkaya konten
     const extractedTexts: string[] = [];
     for (const file of uploadedFiles) {
       if (isPlainTextFile(file)) {
@@ -290,31 +807,39 @@ export async function POST(req: Request) {
     const cleanTitle =
       cleanTopicFromInput(rawTitle || combinedContent) || firstFileTitle || "Materi Belajar";
 
-    try {
-      const aiNote = await generateWithGemini({
-        topic: cleanTitle,
-        content: combinedContent,
-        source,
-        files: uploadedFiles,
-      });
-      if (aiNote) {
-        return NextResponse.json({ note: aiNote }, { status: 200 });
-      }
-    } catch {
-      // lanjut ke penyusun lokal jika API eksternal tidak aktif
-    }
-
-    const richNote = buildRichSubjectNote({
+    const fallbackNote = buildRichSubjectNote({
       source,
       query: combinedContent || firstFileTitle || cleanTitle,
       title: cleanTitle,
     });
 
+    fallbackNote.chapters = expandChaptersToMinimum(
+      fallbackNote.chapters,
+      cleanTitle,
+      MIN_CHAPTERS,
+    );
+    fallbackNote.chapterCount = fallbackNote.chapters.length;
+
     if (uploadedFiles.length > 0) {
-      richNote.sourceInput = uploadedFiles.map((f) => f.name).join(", ");
+      fallbackNote.sourceInput = uploadedFiles.map((f) => f.name).join(", ");
     }
 
-    return NextResponse.json({ note: richNote }, { status: 200 });
+    try {
+      const multiStepNote = await generateMultiStepWithGemini({
+        topic: cleanTitle,
+        content: combinedContent,
+        source,
+        files: uploadedFiles,
+        fallbackNote,
+      });
+      if (multiStepNote) {
+        return NextResponse.json({ note: multiStepNote }, { status: 200 });
+      }
+    } catch {
+      // lanjut ke fallback lokal jika API eksternal tidak aktif
+    }
+
+    return NextResponse.json({ note: fallbackNote }, { status: 200 });
   } catch {
     return NextResponse.json(
       { error: "Gagal memproses permintaan pembuatan materi." },
