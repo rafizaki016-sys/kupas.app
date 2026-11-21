@@ -8,7 +8,9 @@ import {
   BookOpen,
   CheckCircle2,
   FileText,
+  GitBranch,
   Layers,
+  ListOrdered,
   MessageSquare,
   Network,
   RotateCcw,
@@ -31,10 +33,18 @@ type ChatMsg = {
 
 type StepCard =
   | {
+      kind: "intro";
+      chapterNum: number;
+      title: string;
+      summary: string;
+      totalPoints: number;
+    }
+  | {
       kind: "explain";
       heading: string;
       body: string;
       bullets?: string[];
+      showDiagram?: boolean;
     }
   | {
       kind: "check";
@@ -51,6 +61,7 @@ export default function LessonDetailPage() {
   const [note, setNote] = useState<StudyNote>(() => DEFAULT_NOTES[0]);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("belajar");
   const [selectedChapterIdx, setSelectedChapterIdx] = useState<number>(0);
+  const [showChapterOutline, setShowChapterOutline] = useState<boolean>(false);
 
   // Step-by-step learning inside a chapter
   const [stepIdx, setStepIdx] = useState<number>(0);
@@ -81,6 +92,7 @@ export default function LessonDetailPage() {
     const found = all.find((item) => item.id === id) ?? all[0] ?? DEFAULT_NOTES[0];
     setNote(found);
     setSelectedChapterIdx(0);
+    setShowChapterOutline(false);
     setStepIdx(0);
     setStepSelectedOpt(null);
     setStepChecked(false);
@@ -107,19 +119,27 @@ export default function LessonDetailPage() {
     if (!currentChapter) return [];
     const steps: StepCard[] = [
       {
+        kind: "intro",
+        chapterNum: selectedChapterIdx + 1,
+        title: currentChapter.title,
+        summary: currentChapter.summary,
+        totalPoints: currentChapter.points.length,
+      },
+      {
         kind: "explain",
-        heading: currentChapter.title,
+        heading: `Inti Materi · ${currentChapter.title}`,
         body: currentChapter.summary,
         bullets: currentChapter.points.slice(0, 2),
       },
     ];
 
-    if (currentChapter.points.length > 2) {
+    if (currentChapter.points.length > 0) {
       steps.push({
         kind: "explain",
-        heading: `Poin Pendalaman · ${currentChapter.title}`,
-        body: "Perhatikan catatan penting dan contoh penerapan sebelum lanjut ke pertanyaan:",
-        bullets: currentChapter.points.slice(2),
+        heading: "Peta Cabang Konsep Bab",
+        body: "Lihat bagaimana poin-poin utama di bab ini saling terhubung sebelum masuk ke soal cek pemahaman:",
+        bullets: currentChapter.points.length > 2 ? currentChapter.points.slice(2) : undefined,
+        showDiagram: true,
       });
     }
 
@@ -285,16 +305,32 @@ export default function LessonDetailPage() {
         >
           {activeTab === "belajar" && (
             <div className="space-y-5">
-              {/* Pilihan Bab / Jalur */}
+              {/* Baris Bab + Tombol Daftar Bab + Indikator Langkah */}
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e6dece] pb-3.5">
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowChapterOutline((v) => !v)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-[#1d2433] px-3 py-1 text-xs font-bold transition ${
+                      showChapterOutline
+                        ? "bg-[#dfe8ff] text-[#1e4fd8]"
+                        : "bg-[#faf6ee] text-[#1d2433] hover:bg-[#dfe8ff]"
+                    }`}
+                  >
+                    <ListOrdered className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Daftar Bab</span>
+                  </button>
+
                   {note.chapters.map((ch, idx) => (
                     <button
                       key={ch.title}
                       type="button"
-                      onClick={() => setSelectedChapterIdx(idx)}
+                      onClick={() => {
+                        setShowChapterOutline(false);
+                        setSelectedChapterIdx(idx);
+                      }}
                       className={`rounded-full border-[1.5px] border-[#1d2433] px-3 py-1 text-xs font-bold ${
-                        selectedChapterIdx === idx
+                        selectedChapterIdx === idx && !showChapterOutline
                           ? "bg-[#1d2433] text-[#faf6ee]"
                           : "bg-white text-[#1d2433] hover:bg-[#dfe8ff]"
                       }`}
@@ -304,14 +340,56 @@ export default function LessonDetailPage() {
                   ))}
                 </div>
 
-                {!chapterFinished && chapterSteps.length > 0 && (
+                {!chapterFinished && !showChapterOutline && chapterSteps.length > 0 && (
                   <span className="text-xs font-bold text-[#5d6578]">
                     Langkah {Math.min(stepIdx + 1, chapterSteps.length)} / {chapterSteps.length}
                   </span>
                 )}
               </div>
 
-              {chapterFinished ? (
+              {/* Ringkasan Jalur Seluruh Bab */}
+              {showChapterOutline ? (
+                <div className="space-y-3">
+                  <h2 className="text-lg font-extrabold text-[#1d2433]">
+                    Jalur Belajar ({note.chapters.length} Bab)
+                  </h2>
+                  <div className="space-y-2.5">
+                    {note.chapters.map((ch, idx) => {
+                      const done = idx < note.chaptersDone;
+                      return (
+                        <button
+                          key={ch.title}
+                          type="button"
+                          onClick={() => {
+                            setSelectedChapterIdx(idx);
+                            setShowChapterOutline(false);
+                          }}
+                          className="flex w-full items-start justify-between gap-3 rounded-xl border-[1.5px] border-[#1d2433] bg-[#faf6ee] p-4 text-left transition hover:bg-[#dfe8ff]/50"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-[#1d2433] bg-white text-xs font-extrabold text-[#1d2433]">
+                                {idx + 1}
+                              </span>
+                              <h3 className="text-sm font-extrabold text-[#1d2433]">{ch.title}</h3>
+                            </div>
+                            <p className="pl-8 text-xs text-[#5d6578]">{ch.summary}</p>
+                          </div>
+                          <span
+                            className={`shrink-0 rounded-full border border-[#1d2433] px-2.5 py-0.5 text-[11px] font-bold ${
+                              done
+                                ? "bg-emerald-100 text-emerald-900"
+                                : "bg-white text-[#5d6578]"
+                            }`}
+                          >
+                            {done ? "Selesai" : "Mulai"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : chapterFinished ? (
                 <div className="space-y-4 rounded-2xl border-[1.5px] border-[#1d2433] bg-[#faf6ee] p-6 text-center">
                   <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border-[1.5px] border-[#1d2433] bg-[#dfe8ff] text-[#1e4fd8]">
                     <CheckCircle2 className="h-6 w-6" aria-hidden="true" />
@@ -356,10 +434,60 @@ export default function LessonDetailPage() {
                     )}
                   </div>
                 </div>
+              ) : activeStep?.kind === "intro" ? (
+                <div className="space-y-5 py-2">
+                  <div className="rounded-2xl border-[1.5px] border-[#1d2433] bg-[#faf6ee] p-6">
+                    <span className="inline-block rounded-full border border-[#1d2433] bg-[#dfe8ff] px-3 py-0.5 text-xs font-bold uppercase text-[#1e4fd8]">
+                      Bab {activeStep.chapterNum} dari {note.chapters.length}
+                    </span>
+                    <h2 className="mt-3 text-2xl font-extrabold text-[#1d2433]">
+                      {activeStep.title}
+                    </h2>
+                    <p className="mt-2 text-sm leading-relaxed text-[#5d6578]">
+                      {activeStep.summary}
+                    </p>
+                    <p className="mt-4 text-xs font-bold text-[#1d2433]">
+                      {activeStep.totalPoints} poin inti + 1 cek pemahaman di akhir bab ini
+                    </p>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleNextStep}
+                      className="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#1d2433] bg-[#1e4fd8] px-5 py-2.5 text-xs font-bold text-white shadow-[3px_3px_0_#1d2433]"
+                    >
+                      <span>Mulai Bab</span>
+                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
               ) : activeStep?.kind === "explain" ? (
                 <div className="space-y-4">
                   <h2 className="text-xl font-extrabold text-[#1d2433]">{activeStep.heading}</h2>
                   <p className="text-sm leading-relaxed text-[#1d2433]">{activeStep.body}</p>
+
+                  {activeStep.showDiagram && currentChapter && (
+                    <div className="rounded-2xl border-[1.5px] border-[#1d2433] bg-[#faf6ee] p-4 space-y-3">
+                      <div className="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#1d2433] bg-[#dfe8ff] px-3.5 py-2 text-xs font-extrabold text-[#1d2433]">
+                        <GitBranch className="h-4 w-4 text-[#1e4fd8]" aria-hidden="true" />
+                        <span>{currentChapter.title}</span>
+                      </div>
+                      <div className="grid gap-2.5 sm:grid-cols-2">
+                        {currentChapter.points.map((pt, idx) => (
+                          <div
+                            key={pt}
+                            className="rounded-xl border border-[#1d2433] bg-white p-3 text-xs leading-relaxed text-[#1d2433]"
+                          >
+                            <span className="block text-[10px] font-extrabold uppercase text-[#1e4fd8]">
+                              Cabang {idx + 1}
+                            </span>
+                            <span className="mt-0.5 block">{pt}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {activeStep.bullets && activeStep.bullets.length > 0 && (
                     <ul className="space-y-2 rounded-xl border border-[#e6dece] bg-[#faf6ee] p-4 text-sm text-[#1d2433]">
