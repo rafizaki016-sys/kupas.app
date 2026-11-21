@@ -346,68 +346,191 @@ export function generateStudyNoteFromInput(params: {
     title: baseTitle,
     kind,
     sourceInput: (params.query || "").trim() || topicLabel,
-    snippet: `Ringkasan terstruktur tentang ${topicLabel}: konsep inti, penerapan, kartu hafalan, dan latihan soal.`,
+    snippet: `Pembahasan terstruktur tentang ${topicLabel}: definisi & konsep inti, prinsip kerja serta penerapan, ditambah kartu hafalan dan latihan soal.`,
     createdAt: new Date().toISOString(),
     chapterCount: 3,
-    chaptersDone: 1,
+    chaptersDone: 0,
     chapters: [
       {
-        title: `Bab 1 · Pengertian & Konsep Dasar ${topicLabel}`,
-        summary: `Memahami definisi, ruang lingkup, dan istilah utama dalam ${topicLabel} secara runtut.`,
+        title: `Bab 1 · Definisi, Ruang Lingkup & Konsep Inti ${topicLabel}`,
+        summary: `Memahami pengertian dasar, istilah penting, dan kerangka utama dalam ${topicLabel} secara sistematis.`,
         points: [
-          `Mengenali definisi pokok dan karakteristik utama ${topicLabel}.`,
-          "Membedakan konsep inti dengan contoh kasus di kehidupan nyata atau bidang terkait.",
+          `Mendefinisikan ${topicLabel} beserta peran utamanya dalam konteks pembahasan.`,
+          "Mengenali istilah kunci, komponen utama, dan perbedaan konsep yang sering tertukar.",
+          "Menghubungkan konsep dasar dengan contoh nyata agar lebih mudah dipahami.",
         ],
       },
       {
-        title: `Bab 2 · Prinsip Kerja & Penerapan ${topicLabel}`,
-        summary: `Menelaah aturan, pola, atau langkah sistematis saat menerapkan ${topicLabel}.`,
+        title: `Bab 2 · Prinsip Kerja, Langkah & Penerapan ${topicLabel}`,
+        summary: `Menguraikan mekanisme, aturan atau rumus/alur kerja, serta contoh penerapan praktis dari ${topicLabel}.`,
         points: [
-          "Mengikuti alur langkah dari dasar ke kasus yang lebih terstruktur.",
-          "Memperhatikan syarat, batasan, atau kekhususan pada setiap bagian.",
+          "Menyusun alur langkah penyelesaian dari kondisi awal hingga hasil akhir.",
+          "Mengidentifikasi syarat, batasan, atau faktor yang memengaruhi hasil penerapan.",
+          "Menghindari kesalahan umum saat menerapkan konsep ke studi kasus atau soal.",
         ],
       },
       {
-        title: `Bab 3 · Latihan & Penguatan Ingatan`,
-        summary: `Menguji pemahaman melalui pertanyaan cek pemahaman, flashcard, dan kuis.`,
+        title: `Bab 3 · Evaluasi, Catatan Penting & Penguatan Ingatan`,
+        summary: `Menguji pemahaman secara aktif melalui cek pemahaman, flashcard, kuis, dan tanya jawab materi.`,
         points: [
-          "Menjawab soal latihan untuk memastikan pemahaman konsep sebelum lanjut.",
-          "Mengulang kartu hafalan berkala dan memakai Tanya Materi untuk bagian yang belum jelas.",
+          "Menyimpulkan poin-poin paling penting yang wajib diingat kembali sebelum ujian.",
+          "Menguji ketepatan pemahaman lewat soal latihan dan meninjau penjelasan jawabannya.",
+          "Mengulang kartu hafalan secara berkala untuk memperkuat retensi jangka panjang.",
         ],
       },
     ],
     flashcards: [
       {
         id: `${id}-fc-1`,
-        front: `Apa gagasan utama dari ${topicLabel}?`,
-        back: `${topicLabel} membahas konsep dasar, prinsip/aturan utama, serta penerapannya secara sistematis.`,
+        front: `Apa inti pembahasan dari ${topicLabel}?`,
+        back: `${topicLabel} menguraikan konsep dasar, prinsip/aturan utama, serta langkah penerapannya secara runtut dan terstruktur.`,
       },
       {
         id: `${id}-fc-2`,
-        front: `Bagaimana cara terbaik menguasai ${topicLabel} lebih cepat?`,
-        back: "Pahami definisi & alurnya per bab, kerjakan cek pemahaman dan kuis, lalu ulangi lewat flashcard.",
+        front: `Apa hal utama yang perlu diperhatikan saat menerapkan ${topicLabel}?`,
+        back: "Pahami definisi dan syarat berlakunya terlebih dahulu, ikuti langkah secara berurutan, lalu periksa kembali hasilnya.",
+      },
+      {
+        id: `${id}-fc-3`,
+        front: `Bagaimana cara terbaik menguasai ${topicLabel} hingga tuntas?`,
+        back: "Pelajari tiap bab secara bertahap, kerjakan cek pemahaman dan kuis, lalu ulangi poin kunci melalui kartu hafalan.",
       },
     ],
     quiz: [
       {
         question: `Langkah paling tepat saat mempelajari ${topicLabel} adalah...`,
         options: [
-          "Memahami konsep dasar dan alurnya per bab sebelum latihan soal",
-          "Menghafal tanpa memahami makna atau penerapannya",
+          "Memahami konsep dasar dan alurnya per bab sebelum mengerjakan latihan soal",
+          "Menghafal tanpa memahami makna, syarat, dan penerapannya",
           "Melewatkan evaluasi dan pengulangan materi",
           "Membaca sekaligus tanpa membaginya per bagian",
         ],
         correctIndex: 0,
         explanation: `Memahami konsep dasar ${topicLabel} per bab membantu kamu menerapkan aturan dengan tepat saat mengerjakan soal.`,
       },
+      {
+        question: `Mengapa penting meninjau penjelasan setelah menjawab soal tentang ${topicLabel}?`,
+        options: [
+          "Untuk memperbaiki kesalahan konsep dan memperkuat pemahaman langkah penyelesaian",
+          "Agar jumlah halaman catatan bertambah",
+          "Supaya tidak perlu lagi membaca materi",
+          "Karena semua soal memiliki pola yang sama persis tanpa syarat",
+        ],
+        correctIndex: 0,
+        explanation: "Meninjau penjelasan membantu meluruskan miskonsepsi sejak awal sebelum lanjut ke materi berikutnya.",
+      },
     ],
     mindmapRoot: {
       label: topicLabel.slice(0, 46),
       branches: [
-        { title: "Konsep & Definisi", detail: `Dasar-dasar ${topicLabel}` },
-        { title: "Penerapan", detail: "Contoh dan penggunaan praktis" },
-        { title: "Evaluasi", detail: "Kuis, flashcard & tanya jawab" },
+        { title: "Konsep & Definisi", detail: `Dasar-dasar & istilah inti ${topicLabel}` },
+        { title: "Prinsip & Penerapan", detail: "Alur kerja, syarat & contoh kasus" },
+        { title: "Evaluasi & Hafalan", detail: "Kuis, flashcard & ringkasan inti" },
       ],
+    },
+  };
+}
+
+export function buildComprehensiveNoteFromSource(params: {
+  source?: string;
+  query?: string;
+  title?: string;
+}): StudyNote {
+  const rawText = (params.query || "").trim();
+  const cleanTitle = cleanTopicFromInput(params.title || rawText);
+  const base = generateStudyNoteFromInput({
+    source: params.source,
+    query: cleanTitle || rawText,
+  });
+
+  const sentences = rawText
+    .replace(/\r\n/g, "\n")
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 12);
+
+  if (sentences.length < 2) {
+    return {
+      ...base,
+      title: cleanTitle || base.title,
+      sourceInput: rawText || base.sourceInput,
+    };
+  }
+
+  const chunkSize = Math.max(2, Math.ceil(sentences.length / 3));
+  const chapterSpecs = [
+    {
+      prefix: "Bab 1 · Konsep Inti & Latar Belakang",
+      slice: sentences.slice(0, chunkSize),
+    },
+    {
+      prefix: "Bab 2 · Uraian Mendalam & Mekanisme",
+      slice: sentences.slice(chunkSize, chunkSize * 2),
+    },
+    {
+      prefix: "Bab 3 · Penerapan, Catatan Penting & Kesimpulan",
+      slice: sentences.slice(chunkSize * 2),
+    },
+  ].filter((c) => c.slice.length > 0);
+
+  const richChapters = chapterSpecs.map((spec) => ({
+    title: spec.prefix,
+    summary: spec.slice[0],
+    points: spec.slice.length > 1 ? spec.slice : [spec.slice[0]],
+  }));
+
+  const richFlashcards = richChapters.slice(0, 4).map((ch, idx) => ({
+    id: `${base.id}-fc-${idx + 1}`,
+    front: `Jelaskan poin utama pada "${ch.title}"`,
+    back: ch.points.join(" — "),
+  }));
+
+  const richQuiz = [
+    {
+      question: `Poin manakah yang paling sesuai dengan pembahasan "${richChapters[0]?.title || base.title}"?`,
+      options: [
+        richChapters[0]?.summary || base.snippet,
+        "Mengabaikan konsep dasar dan langsung melompat tanpa urutan",
+        "Menyamaratakan semua istilah tanpa membedakan fungsinya",
+        "Menghapus seluruh contoh dan catatan penerapan",
+      ],
+      correctIndex: 0,
+      explanation: `Pada ${richChapters[0]?.title || "bab pertama"}, fokus utamanya adalah: ${
+        richChapters[0]?.summary || base.snippet
+      }`,
+    },
+    ...(richChapters[1]
+      ? [
+          {
+            question: `Apa yang dibahas pada "${richChapters[1].title}"?`,
+            options: [
+              richChapters[1].summary,
+              "Hanya daftar tautan luar tanpa isi materi",
+              "Aturan yang bertentangan dengan seluruh konsep sebelumnya",
+              "Pengulangan judul tanpa penjelasan",
+            ],
+            correctIndex: 0,
+            explanation: richChapters[1].points.join(" "),
+          },
+        ]
+      : []),
+  ];
+
+  return {
+    ...base,
+    title: cleanTitle || base.title,
+    sourceInput: rawText,
+    snippet: sentences.slice(0, 2).join(" ").slice(0, 180),
+    chapterCount: richChapters.length,
+    chapters: richChapters,
+    flashcards: richFlashcards,
+    quiz: richQuiz,
+    mindmapRoot: {
+      label: (cleanTitle || base.title).slice(0, 46),
+      branches: richChapters.map((ch, idx) => ({
+        title: ch.title.replace(/^Bab\s*\d+\s*·\s*/i, ""),
+        detail: ch.points[idx] || ch.summary,
+      })),
     },
   };
 }
