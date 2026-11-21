@@ -4,13 +4,16 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
+  ArrowRight,
   BookOpen,
   CheckCircle2,
   FileText,
   Layers,
   MessageSquare,
   Network,
+  RotateCcw,
   Send,
+  Sparkles,
 } from "lucide-react";
 import {
   DEFAULT_NOTES,
@@ -26,6 +29,21 @@ type ChatMsg = {
   text: string;
 };
 
+type StepCard =
+  | {
+      kind: "explain";
+      heading: string;
+      body: string;
+      bullets?: string[];
+    }
+  | {
+      kind: "check";
+      question: string;
+      options: string[];
+      correctIndex: number;
+      explanation: string;
+    };
+
 export default function LessonDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id || "n1";
@@ -34,12 +52,22 @@ export default function LessonDetailPage() {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("belajar");
   const [selectedChapterIdx, setSelectedChapterIdx] = useState<number>(0);
 
+  // Step-by-step learning inside a chapter
+  const [stepIdx, setStepIdx] = useState<number>(0);
+  const [stepSelectedOpt, setStepSelectedOpt] = useState<number | null>(null);
+  const [stepChecked, setStepChecked] = useState<boolean>(false);
+  const [chapterFinished, setChapterFinished] = useState<boolean>(false);
+  const [sessionXp, setSessionXp] = useState<number>(0);
+
+  // Flashcard state
   const [cardIdx, setCardIdx] = useState<number>(0);
   const [flipped, setFlipped] = useState<boolean>(false);
 
+  // Quiz tab state
   const [quizIdx, setQuizIdx] = useState<number>(0);
   const [chosenOption, setChosenOption] = useState<number | null>(null);
 
+  // Ask / Tanya materi state
   const [question, setQuestion] = useState<string>("");
   const [messages, setMessages] = useState<ChatMsg[]>([
     {
@@ -53,31 +81,111 @@ export default function LessonDetailPage() {
     const found = all.find((item) => item.id === id) ?? all[0] ?? DEFAULT_NOTES[0];
     setNote(found);
     setSelectedChapterIdx(0);
+    setStepIdx(0);
+    setStepSelectedOpt(null);
+    setStepChecked(false);
+    setChapterFinished(false);
     setCardIdx(0);
     setFlipped(false);
     setQuizIdx(0);
     setChosenOption(null);
   }, [id]);
 
+  // Reset step state when switching chapters
+  useEffect(() => {
+    setStepIdx(0);
+    setStepSelectedOpt(null);
+    setStepChecked(false);
+    setChapterFinished(false);
+  }, [selectedChapterIdx]);
+
   const currentChapter = note.chapters[selectedChapterIdx] ?? note.chapters[0];
   const currentCard = note.flashcards[cardIdx] ?? note.flashcards[0];
   const currentQuiz = note.quiz[quizIdx] ?? note.quiz[0];
+
+  const chapterSteps: StepCard[] = useMemo(() => {
+    if (!currentChapter) return [];
+    const steps: StepCard[] = [
+      {
+        kind: "explain",
+        heading: currentChapter.title,
+        body: currentChapter.summary,
+        bullets: currentChapter.points.slice(0, 2),
+      },
+    ];
+
+    if (currentChapter.points.length > 2) {
+      steps.push({
+        kind: "explain",
+        heading: `Poin Pendalaman · ${currentChapter.title}`,
+        body: "Perhatikan catatan penting dan contoh penerapan sebelum lanjut ke pertanyaan:",
+        bullets: currentChapter.points.slice(2),
+      });
+    }
+
+    const relatedQuiz =
+      note.quiz[selectedChapterIdx % Math.max(1, note.quiz.length)] ?? note.quiz[0];
+    if (relatedQuiz) {
+      steps.push({
+        kind: "check",
+        question: relatedQuiz.question,
+        options: relatedQuiz.options,
+        correctIndex: relatedQuiz.correctIndex,
+        explanation: relatedQuiz.explanation,
+      });
+    }
+
+    return steps;
+  }, [currentChapter, note.quiz, selectedChapterIdx]);
+
+  const activeStep = chapterSteps[stepIdx] ?? chapterSteps[0];
 
   const progressPct = useMemo(() => {
     if (!note.chapterCount) return 0;
     return Math.min(100, Math.round((note.chaptersDone / note.chapterCount) * 100));
   }, [note.chapterCount, note.chaptersDone]);
 
-  function handleMarkChapterDone() {
-    const nextDone = Math.min(note.chapterCount, Math.max(note.chaptersDone, selectedChapterIdx + 1));
+  function completeChapterProgress() {
+    const nextDone = Math.min(
+      note.chapterCount,
+      Math.max(note.chaptersDone, selectedChapterIdx + 1),
+    );
     const updated: StudyNote = {
       ...note,
       chaptersDone: nextDone,
     };
     setNote(updated);
     upsertStudyNote(updated);
+    setSessionXp((xp) => xp + 15);
+    setChapterFinished(true);
+  }
+
+  function handleNextStep() {
+    if (stepIdx < chapterSteps.length - 1) {
+      setStepIdx((i) => i + 1);
+      setStepSelectedOpt(null);
+      setStepChecked(false);
+    } else {
+      completeChapterProgress();
+    }
+  }
+
+  function handleCheckAnswer() {
+    if (stepSelectedOpt === null) return;
+    setStepChecked(true);
+    if (activeStep?.kind === "check" && stepSelectedOpt === activeStep.correctIndex) {
+      setSessionXp((xp) => xp + 5);
+    }
+  }
+
+  function handleGoNextChapter() {
     if (selectedChapterIdx < note.chapters.length - 1) {
       setSelectedChapterIdx((idx) => idx + 1);
+    } else {
+      setChapterFinished(false);
+      setStepIdx(0);
+      setStepSelectedOpt(null);
+      setStepChecked(false);
     }
   }
 
@@ -116,7 +224,13 @@ export default function LessonDetailPage() {
           <span>← Kembali ke Beranda</span>
         </Link>
 
-        <div className="flex items-center gap-3 text-xs font-bold text-[#1d2433]">
+        <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-[#1d2433]">
+          {sessionXp > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-[#1d2433] bg-[#dfe8ff] px-2.5 py-0.5 text-[#1e4fd8]">
+              <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>+{sessionXp} XP sesi ini</span>
+            </span>
+          )}
           <span>
             Progres: {note.chaptersDone}/{note.chapterCount} bab ({progressPct}%)
           </span>
@@ -171,45 +285,180 @@ export default function LessonDetailPage() {
         >
           {activeTab === "belajar" && (
             <div className="space-y-5">
-              <div className="flex flex-wrap gap-2">
-                {note.chapters.map((ch, idx) => (
-                  <button
-                    key={ch.title}
-                    type="button"
-                    onClick={() => setSelectedChapterIdx(idx)}
-                    className={`rounded-full border-[1.5px] border-[#1d2433] px-3 py-1 text-xs font-bold ${
-                      selectedChapterIdx === idx
-                        ? "bg-[#1d2433] text-[#faf6ee]"
-                        : "bg-white text-[#1d2433] hover:bg-[#dfe8ff]"
-                    }`}
-                  >
-                    Bab {idx + 1}
-                  </button>
-                ))}
+              {/* Pilihan Bab / Jalur */}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e6dece] pb-3.5">
+                <div className="flex flex-wrap gap-2">
+                  {note.chapters.map((ch, idx) => (
+                    <button
+                      key={ch.title}
+                      type="button"
+                      onClick={() => setSelectedChapterIdx(idx)}
+                      className={`rounded-full border-[1.5px] border-[#1d2433] px-3 py-1 text-xs font-bold ${
+                        selectedChapterIdx === idx
+                          ? "bg-[#1d2433] text-[#faf6ee]"
+                          : "bg-white text-[#1d2433] hover:bg-[#dfe8ff]"
+                      }`}
+                    >
+                      Bab {idx + 1}
+                    </button>
+                  ))}
+                </div>
+
+                {!chapterFinished && chapterSteps.length > 0 && (
+                  <span className="text-xs font-bold text-[#5d6578]">
+                    Langkah {Math.min(stepIdx + 1, chapterSteps.length)} / {chapterSteps.length}
+                  </span>
+                )}
               </div>
 
-              {currentChapter && (
-                <div className="space-y-4">
-                  <h2 className="text-xl font-extrabold text-[#1d2433]">{currentChapter.title}</h2>
-                  <p className="text-sm leading-relaxed text-[#1d2433]">{currentChapter.summary}</p>
-                  <ul className="space-y-2 rounded-xl border border-[#e6dece] bg-[#faf6ee] p-4 text-sm text-[#1d2433]">
-                    {currentChapter.points.map((pt) => (
-                      <li key={pt} className="flex items-start gap-2">
-                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#1e4fd8]" />
-                        <span>{pt}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <button
-                    type="button"
-                    onClick={handleMarkChapterDone}
-                    className="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#1d2433] bg-[#1e4fd8] px-4 py-2 text-xs font-bold text-white shadow-[3px_3px_0_#1d2433]"
-                  >
-                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                    <span>Tandai Bab Selesai &amp; Lanjut</span>
-                  </button>
+              {chapterFinished ? (
+                <div className="space-y-4 rounded-2xl border-[1.5px] border-[#1d2433] bg-[#faf6ee] p-6 text-center">
+                  <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border-[1.5px] border-[#1d2433] bg-[#dfe8ff] text-[#1e4fd8]">
+                    <CheckCircle2 className="h-6 w-6" aria-hidden="true" />
+                  </div>
+                  <h2 className="text-xl font-extrabold text-[#1d2433]">Bab selesai!</h2>
+                  <p className="text-sm text-[#5d6578]">
+                    Kamu menyelesaikan <strong className="text-[#1d2433]">{currentChapter?.title}</strong>{" "}
+                    dan mengumpulkan <strong className="text-[#1e4fd8]">+15 XP</strong>.
+                  </p>
+                  <div className="flex flex-wrap justify-center gap-2.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setChapterFinished(false);
+                        setStepIdx(0);
+                        setStepSelectedOpt(null);
+                        setStepChecked(false);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-xl border-[1.5px] border-[#1d2433] bg-white px-4 py-2 text-xs font-bold text-[#1d2433]"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>Ulang Bab Ini</span>
+                    </button>
+                    {selectedChapterIdx < note.chapters.length - 1 ? (
+                      <button
+                        type="button"
+                        onClick={handleGoNextChapter}
+                        className="inline-flex items-center gap-1.5 rounded-xl border-[1.5px] border-[#1d2433] bg-[#1e4fd8] px-4 py-2 text-xs font-bold text-white shadow-[3px_3px_0_#1d2433]"
+                      >
+                        <span>Lanjut ke Bab {selectedChapterIdx + 2}</span>
+                        <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("kuis")}
+                        className="inline-flex items-center gap-1.5 rounded-xl border-[1.5px] border-[#1d2433] bg-[#1e4fd8] px-4 py-2 text-xs font-bold text-white shadow-[3px_3px_0_#1d2433]"
+                      >
+                        <span>Latihan Kuis Penuh</span>
+                        <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              )}
+              ) : activeStep?.kind === "explain" ? (
+                <div className="space-y-4">
+                  <h2 className="text-xl font-extrabold text-[#1d2433]">{activeStep.heading}</h2>
+                  <p className="text-sm leading-relaxed text-[#1d2433]">{activeStep.body}</p>
+
+                  {activeStep.bullets && activeStep.bullets.length > 0 && (
+                    <ul className="space-y-2 rounded-xl border border-[#e6dece] bg-[#faf6ee] p-4 text-sm text-[#1d2433]">
+                      {activeStep.bullets.map((pt) => (
+                        <li key={pt} className="flex items-start gap-2">
+                          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#1e4fd8]" />
+                          <span>{pt}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={handleNextStep}
+                      className="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#1d2433] bg-[#1e4fd8] px-5 py-2.5 text-xs font-bold text-white shadow-[3px_3px_0_#1d2433]"
+                    >
+                      <span>Lanjut</span>
+                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              ) : activeStep?.kind === "check" ? (
+                <div className="space-y-4">
+                  <span className="inline-block rounded-full border border-[#1d2433] bg-[#dfe8ff] px-3 py-0.5 text-[11px] font-bold uppercase text-[#1e4fd8]">
+                    Cek Pemahaman Bab
+                  </span>
+                  <h2 className="text-lg font-extrabold text-[#1d2433]">{activeStep.question}</h2>
+
+                  <div className="space-y-2.5">
+                    {activeStep.options.map((opt, idx) => {
+                      const picked = stepSelectedOpt === idx;
+                      const isCorrect = idx === activeStep.correctIndex;
+                      let boxClass = "border-[#1d2433] bg-white text-[#1d2433] hover:bg-[#dfe8ff]";
+                      if (stepChecked) {
+                        if (isCorrect) {
+                          boxClass = "border-emerald-700 bg-emerald-50 text-emerald-950";
+                        } else if (picked) {
+                          boxClass = "border-rose-700 bg-rose-50 text-rose-950";
+                        }
+                      } else if (picked) {
+                        boxClass = "border-[#1d2433] bg-[#dfe8ff] text-[#1d2433]";
+                      }
+
+                      return (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => {
+                            if (stepChecked && stepSelectedOpt === activeStep.correctIndex) return;
+                            setStepSelectedOpt(idx);
+                            setStepChecked(false);
+                          }}
+                          className={`flex w-full items-center gap-3 rounded-xl border-[1.5px] px-4 py-3 text-left text-sm font-semibold transition ${boxClass}`}
+                        >
+                          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md border border-[#1d2433] bg-[#faf6ee] text-xs font-bold text-[#1d2433]">
+                            {idx + 1}
+                          </span>
+                          <span>{opt}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {stepChecked && (
+                    <div className="rounded-xl border border-[#e6dece] bg-[#faf6ee] p-4 text-xs text-[#1d2433]">
+                      <p className="font-bold">
+                        {stepSelectedOpt === activeStep.correctIndex
+                          ? "Tepat sekali! (+5 XP)"
+                          : "Belum tepat — coba pilih opsi lain lalu periksa lagi."}
+                      </p>
+                      <p className="mt-1 text-[#5d6578]">{activeStep.explanation}</p>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-end gap-2.5 pt-2">
+                    {stepChecked && stepSelectedOpt === activeStep.correctIndex ? (
+                      <button
+                        type="button"
+                        onClick={handleNextStep}
+                        className="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#1d2433] bg-[#1e4fd8] px-5 py-2.5 text-xs font-bold text-white shadow-[3px_3px_0_#1d2433]"
+                      >
+                        <span>Lanjut</span>
+                        <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={stepSelectedOpt === null}
+                        onClick={handleCheckAnswer}
+                        className="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#1d2433] bg-[#1e4fd8] px-5 py-2.5 text-xs font-bold text-white shadow-[3px_3px_0_#1d2433] disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none"
+                      >
+                        <span>Periksa</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
 
