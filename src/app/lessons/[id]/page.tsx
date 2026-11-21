@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -62,6 +62,7 @@ export default function LessonDetailPage() {
   const [showFormulaBox, setShowFormulaBox] = useState<boolean>(true);
   const [customFormula, setCustomFormula] = useState<string>("∑F = m · a");
   const [exportStatus, setExportStatus] = useState<string>("");
+  const exportTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [editableChapters, setEditableChapters] = useState(note.chapters);
 
   // Ask / Tanya materi state
@@ -84,7 +85,20 @@ export default function LessonDetailPage() {
     setFlipped(false);
     setQuizIdx(0);
     setChosenOption(null);
+    setQuestion("");
+    setMessages([
+      {
+        role: "assistant",
+        text: "Halo, tanya apa saja — aku bisa bantu kamu memahami catatan ini dan menjawab pertanyaan apa pun.",
+      },
+    ]);
   }, [id]);
+
+  useEffect(() => {
+    return () => {
+      if (exportTimerRef.current) clearTimeout(exportTimerRef.current);
+    };
+  }, []);
 
   const totalChapters = Math.max(note.chapterCount || 0, note.chapters.length);
   const currentChapter = note.chapters[selectedChapterIdx] ?? note.chapters[0];
@@ -94,7 +108,7 @@ export default function LessonDetailPage() {
   const currentQuiz = note.quiz[quizIdx] ?? note.quiz[0];
 
   const radialBranches = useMemo(() => {
-    const baseBranches = note.mindmapRoot.branches || [];
+    const baseBranches = note.mindmapRoot?.branches || [];
     const chapterBranches = note.chapters.map((ch) => ({
       title: ch.title.replace(/^Bab\s*\d+\s*·\s*/i, ""),
       detail: ch.summary,
@@ -113,7 +127,7 @@ export default function LessonDetailPage() {
     }
 
     return unique.length > 0 ? unique : [{ title: "Konsep Utama", detail: note.snippet }];
-  }, [note.mindmapRoot.branches, note.chapters, note.snippet]);
+  }, [note.mindmapRoot?.branches, note.chapters, note.snippet]);
 
   const progressPct = useMemo(() => {
     if (!totalChapters) return 0;
@@ -193,10 +207,13 @@ export default function LessonDetailPage() {
     const a = document.createElement("a");
     a.href = url;
     a.download = `${note.id}-catatan.md`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     setExportStatus("Terekspor (.md)");
-    setTimeout(() => setExportStatus(""), 2500);
+    if (exportTimerRef.current) clearTimeout(exportTimerRef.current);
+    exportTimerRef.current = setTimeout(() => setExportStatus(""), 2500);
   }
 
   function handleQuickNotePrompt(promptText: string) {
@@ -425,7 +442,7 @@ export default function LessonDetailPage() {
 
                   return (
                     <div
-                      key={ch.title}
+                      key={`${ch.title}-${idx}`}
                       className={`relative flex items-center gap-4 ${
                         alignRight ? "sm:flex-row-reverse" : "sm:flex-row"
                       }`}
@@ -616,20 +633,17 @@ export default function LessonDetailPage() {
                   {editableChapters.map((ch, idx) => (
                     <div key={`${ch.title}-${idx}`} className="space-y-2.5 pt-1">
                       <h2 className="text-base font-extrabold text-[#1d2433]">{ch.title}</h2>
-                      <p
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) =>
-                          handleUpdateChapterSummary(idx, e.currentTarget.textContent || ch.summary)
-                        }
-                        className={`rounded-lg px-1.5 py-1 text-sm leading-relaxed text-[#1d2433] focus:bg-[#faf6ee] focus:outline-none focus:ring-1 focus:ring-[#1e4fd8] ${
+                      <textarea
+                        aria-label={`Ringkasan ${ch.title}`}
+                        rows={3}
+                        value={ch.summary}
+                        onChange={(e) => handleUpdateChapterSummary(idx, e.target.value)}
+                        className={`w-full resize-y rounded-lg bg-transparent px-1.5 py-1 text-sm leading-relaxed text-[#1d2433] focus:bg-[#faf6ee] focus:outline-none focus:ring-1 focus:ring-[#1e4fd8] ${
                           isBold ? "font-bold" : ""
                         } ${isItalic ? "italic" : ""} ${isUnderline ? "underline" : ""} ${
                           isStrike ? "line-through" : ""
                         }`}
-                      >
-                        {ch.summary}
-                      </p>
+                      />
 
                       {idx === 0 && showFormulaBox && (
                         <div className="my-3 space-y-2.5">
@@ -661,8 +675,8 @@ export default function LessonDetailPage() {
                             noteAlign === "center" ? "list-none" : "list-disc pl-5"
                           }`}
                         >
-                          {ch.points.map((pt) => (
-                            <li key={pt}>{pt}</li>
+                          {ch.points.map((pt, pIdx) => (
+                            <li key={`${pt}-${pIdx}`}>{pt}</li>
                           ))}
                         </ul>
                       )}
@@ -777,102 +791,122 @@ export default function LessonDetailPage() {
             <RadialMindmap rootLabel={note.title} branches={radialBranches} />
           )}
 
-          {activeTab === "kuis" && currentQuiz && (
-            <div className="mx-auto max-w-[820px] space-y-4 rounded-2xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] p-6 shadow-[5px_5px_0_#1d2433]">
-              <div className="flex items-center justify-between text-xs font-bold text-[#5d6578]">
-                <span>Kuis</span>
-                <span>
-                  Soal {quizIdx + 1} / {note.quiz.length}
-                </span>
-              </div>
-              <h1 className="text-lg font-extrabold text-[#1d2433]">{currentQuiz.question}</h1>
-              <div className="space-y-2.5">
-                {currentQuiz.options.map((opt, idx) => {
-                  const picked = chosenOption === idx;
-                  const isCorrect = idx === currentQuiz.correctIndex;
-                  let styleClass =
-                    "border-[#1d2433] bg-white text-[#1d2433] hover:bg-[#dfe8ff]";
-                  if (chosenOption !== null) {
-                    if (isCorrect) styleClass = "border-emerald-700 bg-emerald-50 text-emerald-950";
-                    else if (picked) styleClass = "border-rose-700 bg-rose-50 text-rose-950";
-                  }
-                  return (
-                    <button
-                      key={opt}
-                      type="button"
-                      onClick={() => setChosenOption(idx)}
-                      className={`w-full rounded-xl border-[1.5px] px-4 py-3 text-left text-sm font-semibold transition ${styleClass}`}
-                    >
-                      {opt}
-                    </button>
-                  );
-                })}
-              </div>
-              {chosenOption !== null && (
-                <div className="rounded-xl border border-[#e6dece] bg-[#faf6ee] p-4 text-xs">
-                  <p className="font-bold text-[#1d2433]">
-                    {chosenOption === currentQuiz.correctIndex
-                      ? "Jawaban tepat!"
-                      : "Perhatikan penjelasan berikut:"}
-                  </p>
-                  <p className="mt-1 text-[#5d6578]">{currentQuiz.explanation}</p>
-                  {note.quiz.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setChosenOption(null);
-                        setQuizIdx((i) => (i + 1) % note.quiz.length);
-                      }}
-                      className="mt-3 rounded-lg border-[1.5px] border-[#1d2433] bg-[#1e4fd8] px-3.5 py-1.5 text-xs font-bold text-white"
-                    >
-                      Soal Berikutnya
-                    </button>
-                  )}
+          {activeTab === "kuis" && (
+            currentQuiz ? (
+              <div className="mx-auto max-w-[820px] space-y-4 rounded-2xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] p-6 shadow-[5px_5px_0_#1d2433]">
+                <div className="flex items-center justify-between text-xs font-bold text-[#5d6578]">
+                  <span>Kuis</span>
+                  <span>
+                    Soal {quizIdx + 1} / {note.quiz.length}
+                  </span>
                 </div>
-              )}
-            </div>
+                <h1 className="text-lg font-extrabold text-[#1d2433]">{currentQuiz.question}</h1>
+                <div className="space-y-2.5">
+                  {currentQuiz.options.map((opt, idx) => {
+                    const picked = chosenOption === idx;
+                    const isCorrect = idx === currentQuiz.correctIndex;
+                    let styleClass =
+                      "border-[#1d2433] bg-white text-[#1d2433] hover:bg-[#dfe8ff]";
+                    if (chosenOption !== null) {
+                      if (isCorrect) styleClass = "border-emerald-700 bg-emerald-50 text-emerald-950";
+                      else if (picked) styleClass = "border-rose-700 bg-rose-50 text-rose-950";
+                      else styleClass = "border-[#d5cdc0] bg-white/70 text-[#5d6578]";
+                    }
+                    return (
+                      <button
+                        key={`${idx}-${opt}`}
+                        type="button"
+                        disabled={chosenOption !== null}
+                        onClick={() => {
+                          if (chosenOption !== null) return;
+                          setChosenOption(idx);
+                          if (idx === currentQuiz.correctIndex) {
+                            setSessionXp((xp) => xp + 5);
+                          }
+                        }}
+                        className={`w-full rounded-xl border-[1.5px] px-4 py-3 text-left text-sm font-semibold transition disabled:cursor-default ${styleClass}`}
+                      >
+                        {opt}
+                      </button>
+                    );
+                  })}
+                </div>
+                {chosenOption !== null && (
+                  <div className="rounded-xl border border-[#e6dece] bg-[#faf6ee] p-4 text-xs">
+                    <p className="font-bold text-[#1d2433]">
+                      {chosenOption === currentQuiz.correctIndex
+                        ? "Jawaban tepat! (+5 XP)"
+                        : "Perhatikan penjelasan berikut:"}
+                    </p>
+                    <p className="mt-1 text-[#5d6578]">{currentQuiz.explanation}</p>
+                    {note.quiz.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setChosenOption(null);
+                          setQuizIdx((i) => (i + 1) % note.quiz.length);
+                        }}
+                        className="mt-3 rounded-lg border-[1.5px] border-[#1d2433] bg-[#1e4fd8] px-3.5 py-1.5 text-xs font-bold text-white"
+                      >
+                        Soal Berikutnya
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="mx-auto max-w-[820px] rounded-2xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] p-6 text-center text-sm font-semibold text-[#5d6578] shadow-[5px_5px_0_#1d2433]">
+                Belum ada soal kuis untuk materi ini.
+              </div>
+            )
           )}
 
-          {activeTab === "kartu" && currentCard && (
-            <div className="mx-auto max-w-[820px] space-y-4 rounded-2xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] p-6 shadow-[5px_5px_0_#1d2433]">
-              <div className="flex items-center justify-between text-xs font-bold text-[#5d6578]">
-                <span>Kartu Hafalan</span>
-                <span>
-                  Kartu {cardIdx + 1} / {note.flashcards.length}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setFlipped((f) => !f)}
-                className="flex min-h-[190px] w-full flex-col items-center justify-center rounded-2xl border-[1.5px] border-[#1d2433] bg-[#faf6ee] p-6 text-center shadow-[4px_4px_0_#1d2433]"
-              >
-                <span className="rounded-full border border-[#1d2433] bg-white px-3 py-0.5 text-[11px] font-bold uppercase text-[#1e4fd8]">
-                  {flipped ? "Jawaban" : "Pertanyaan"}
-                </span>
-                <p className="mt-4 max-w-md text-base font-bold text-[#1d2433]">
-                  {flipped ? currentCard.back : currentCard.front}
-                </p>
-              </button>
-              <div className="flex justify-between">
+          {activeTab === "kartu" && (
+            currentCard ? (
+              <div className="mx-auto max-w-[820px] space-y-4 rounded-2xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] p-6 shadow-[5px_5px_0_#1d2433]">
+                <div className="flex items-center justify-between text-xs font-bold text-[#5d6578]">
+                  <span>Kartu Hafalan</span>
+                  <span>
+                    Kartu {cardIdx + 1} / {note.flashcards.length}
+                  </span>
+                </div>
                 <button
                   type="button"
                   onClick={() => setFlipped((f) => !f)}
-                  className="rounded-xl border-[1.5px] border-[#1d2433] bg-white px-4 py-2 text-xs font-bold text-[#1d2433]"
+                  className="flex min-h-[190px] w-full flex-col items-center justify-center rounded-2xl border-[1.5px] border-[#1d2433] bg-[#faf6ee] p-6 text-center shadow-[4px_4px_0_#1d2433]"
                 >
-                  {flipped ? "Balik ke Soal" : "Lihat Jawaban"}
+                  <span className="rounded-full border border-[#1d2433] bg-white px-3 py-0.5 text-[11px] font-bold uppercase text-[#1e4fd8]">
+                    {flipped ? "Jawaban" : "Pertanyaan"}
+                  </span>
+                  <p className="mt-4 max-w-md text-base font-bold text-[#1d2433]">
+                    {flipped ? currentCard.back : currentCard.front}
+                  </p>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFlipped(false);
-                    setCardIdx((i) => (i + 1) % note.flashcards.length);
-                  }}
-                  className="rounded-xl border-[1.5px] border-[#1d2433] bg-[#1e4fd8] px-4 py-2 text-xs font-bold text-white shadow-[3px_3px_0_#1d2433]"
-                >
-                  Berikutnya →
-                </button>
+                <div className="flex justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setFlipped((f) => !f)}
+                    className="rounded-xl border-[1.5px] border-[#1d2433] bg-white px-4 py-2 text-xs font-bold text-[#1d2433]"
+                  >
+                    {flipped ? "Balik ke Soal" : "Lihat Jawaban"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFlipped(false);
+                      setCardIdx((i) => (i + 1) % note.flashcards.length);
+                    }}
+                    className="rounded-xl border-[1.5px] border-[#1d2433] bg-[#1e4fd8] px-4 py-2 text-xs font-bold text-white shadow-[3px_3px_0_#1d2433]"
+                  >
+                    Berikutnya →
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="mx-auto max-w-[820px] rounded-2xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] p-6 text-center text-sm font-semibold text-[#5d6578] shadow-[5px_5px_0_#1d2433]">
+                Belum ada kartu hafalan untuk materi ini.
+              </div>
+            )
           )}
 
           {activeTab === "sumber" && (
@@ -936,9 +970,9 @@ export default function LessonDetailPage() {
       {/* Mobile Bottom Nav */}
       <nav
         aria-label="Navigasi bawah"
-        className="fixed inset-x-0 bottom-0 z-20 flex items-center justify-around border-t-[1.5px] border-[#1d2433] bg-[#fffdf8] py-1.5 md:hidden"
+        className="fixed inset-x-0 bottom-0 z-20 flex items-center justify-start gap-1 overflow-x-auto border-t-[1.5px] border-[#1d2433] bg-[#fffdf8] px-2 py-1.5 sm:justify-around md:hidden"
       >
-        {navItems.slice(0, 5).map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon;
           const active = activeTab === item.key;
           return (
@@ -949,7 +983,7 @@ export default function LessonDetailPage() {
                 setActiveTab(item.key);
                 if (item.key === "belajar") setInChapterRunner(false);
               }}
-              className={`flex flex-col items-center gap-0.5 rounded-lg px-2.5 py-1 text-[10px] font-bold ${
+              className={`flex shrink-0 flex-col items-center gap-0.5 rounded-lg px-2.5 py-1 text-[10px] font-bold ${
                 active ? "bg-[#1a2234] text-white" : "text-[#5d6578]"
               }`}
             >
