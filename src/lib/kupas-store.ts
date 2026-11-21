@@ -250,38 +250,44 @@ export function buildRichSubjectNote(params: {
   const lower = `${cleanTitle} ${rawQuery}`.toLowerCase();
   const id = `note-${Date.now()}`;
 
-  // 1. Jika pengguna menempel isi teks/catatan panjang, urai dari kalimat aslinya
+  // 1. Prioritaskan penguraian kalimat/baris dari isi teks yang dimasukkan pengguna
   const sentences = dedupeStrings(
     rawQuery
       .replace(/\r\n/g, "\n")
       .split(/(?<=[.!?])\s+|\n+/)
-      .filter((s) => s.trim().length >= 16),
+      .filter((s) => s.trim().length >= 10),
   );
 
-  if (sentences.length >= 3 && rawQuery.length > 140) {
-    const perGroup = Math.max(2, Math.ceil(sentences.length / 3));
-    const groups = [
-      sentences.slice(0, perGroup),
-      sentences.slice(perGroup, perGroup * 2),
-      sentences.slice(perGroup * 2),
-    ].filter((g) => g.length > 0);
+  if (sentences.length >= 2 && rawQuery.length > 60) {
+    const groupCount = Math.min(3, sentences.length);
+    const perGroup = Math.max(1, Math.ceil(sentences.length / groupCount));
+    const groups: string[][] = [];
+
+    for (let i = 0; i < sentences.length; i += perGroup) {
+      groups.push(sentences.slice(i, i + perGroup));
+    }
 
     const chapterLabels = [
-      "Konsep & Dasar",
-      "Uraian & Mekanisme",
-      "Penerapan & Kesimpulan",
+      "Pokok Bahasan Awal",
+      "Uraian Lanjutan",
+      "Penerapan & Intisari",
     ];
 
     const chapters: ChapterItem[] = groups.map((grp, idx) => {
       const summary = grp[0];
-      const details = grp.slice(1);
+      const extraPoints = grp.slice(1);
+      const fallbackPoints = sentences.filter((s) => s !== summary).slice(0, 2);
+      const points =
+        extraPoints.length > 0
+          ? extraPoints
+          : fallbackPoints.length > 0
+            ? fallbackPoints
+            : [`Kata kunci dari bagian ini: ${cleanTitle}`];
+
       return {
-        title: `Bab ${idx + 1} · ${chapterLabels[idx] || "Pembahasan Lanjutan"}`,
+        title: `Bab ${idx + 1} · ${chapterLabels[idx] || "Pembahasan"}`,
         summary,
-        points:
-          details.length > 0
-            ? details
-            : [`Poin kunci: ${summary}`],
+        points,
       };
     });
 
@@ -297,17 +303,17 @@ export function buildRichSubjectNote(params: {
       chapters,
       flashcards: chapters.map((ch, idx) => ({
         id: `${id}-fc-${idx + 1}`,
-        front: `Jelaskan poin inti pada ${ch.title}`,
-        back: `${ch.summary}${ch.points[0] && ch.points[0] !== `Poin kunci: ${ch.summary}` ? ` — ${ch.points[0]}` : ""}`,
+        front: `Apa penjelasan utama pada ${ch.title}?`,
+        back: `${ch.summary}${ch.points[0] ? ` — ${ch.points[0]}` : ""}`,
       })),
       quiz: [
         {
-          question: `Pernyataan manakah yang sesuai dengan ${chapters[0]?.title || cleanTitle}?`,
+          question: `Pernyataan mana yang paling sesuai dengan isi materi pada ${chapters[0]?.title || cleanTitle}?`,
           options: [
             chapters[0]?.summary || sentences[0],
-            "Mengabaikan seluruh informasi utama pada teks sumber",
-            "Menyimpulkan hasil akhir tanpa memperhatikan data awal",
-            "Menghapus seluruh pengecualian yang dijelaskan materi",
+            "Mengabaikan isi catatan yang diberikan pengguna",
+            "Menyimpulkan tanpa mengikuti alur penjelasan pada teks",
+            "Menghapus seluruh poin utama dari catatan",
           ],
           correctIndex: 0,
           explanation: chapters[0]?.points[0] || chapters[0]?.summary || "",
@@ -315,12 +321,12 @@ export function buildRichSubjectNote(params: {
         ...(chapters[1]
           ? [
               {
-                question: `Apa pembahasan utama pada ${chapters[1].title}?`,
+                question: `Apa bahasan utama pada ${chapters[1].title}?`,
                 options: [
                   chapters[1].summary,
-                  "Daftar pustaka tanpa penjelasan konsep",
-                  "Pengulangan definisi tanpa mekanisme",
-                  "Catatan yang bertentangan dengan bab pertama",
+                  "Bagian kosong tanpa penjelasan dari materi",
+                  "Pengulangan judul tanpa isi bahasan",
+                  "Kesimpulan yang tidak terhubung dengan teks",
                 ],
                 correctIndex: 0,
                 explanation: chapters[1].points[0] || chapters[1].summary,
