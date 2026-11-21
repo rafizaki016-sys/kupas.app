@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, BookOpen, FileText, Headphones, Link2, Sparkles } from "lucide-react";
@@ -8,6 +8,7 @@ import {
   generateStudyNoteFromInput,
   upsertStudyNote,
   type NoteKind,
+  type StudyNote,
 } from "@/lib/kupas-store";
 
 function NewLessonContent() {
@@ -22,6 +23,9 @@ function NewLessonContent() {
   const [content, setContent] = useState<string>(initialQuery);
   const [creating, setCreating] = useState<boolean>(false);
 
+  const triggeredQueryRef = useRef<string | null>(null);
+  const isSubmittingRef = useRef<boolean>(false);
+
   useEffect(() => {
     setSource(initialSource);
     if (initialQuery) {
@@ -30,22 +34,58 @@ function NewLessonContent() {
     }
   }, [initialSource, initialQuery]);
 
-  function handleCreate(rawQuery: string, rawSource: string) {
+  async function handleCreate(rawQuery: string, rawSource: string, customTitle?: string) {
+    if (isSubmittingRef.current) return;
     const textValue = rawQuery.trim() || content.trim() || title.trim();
-    const note = generateStudyNoteFromInput({
+    if (!textValue) return;
+
+    isSubmittingRef.current = true;
+    setCreating(true);
+
+    try {
+      const res = await fetch("/api/generate-lesson", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: (customTitle ?? title).trim() || textValue,
+          content: textValue,
+          source: rawSource,
+        }),
+      });
+
+      if (res.ok) {
+        const data = (await res.json()) as { note?: StudyNote };
+        if (data.note) {
+          upsertStudyNote(data.note);
+          router.push(`/lessons/${data.note.id}`);
+          return;
+        }
+      }
+    } catch {
+      // fallback lokal jika endpoint tidak tersedia
+    }
+
+    const fallbackNote = generateStudyNoteFromInput({
       source: rawSource,
       query: textValue,
     });
-    upsertStudyNote(note);
-    router.push(`/lessons/${note.id}`);
+    upsertStudyNote(fallbackNote);
+    router.push(`/lessons/${fallbackNote.id}`);
   }
 
   useEffect(() => {
-    if (!initialQuery.trim()) return;
+    const cleanQuery = initialQuery.trim();
+    if (!cleanQuery) return;
+
+    const triggerKey = `${initialSource}::${cleanQuery}`;
+    if (triggeredQueryRef.current === triggerKey) return;
+    triggeredQueryRef.current = triggerKey;
+
     setCreating(true);
     const timer = setTimeout(() => {
-      handleCreate(initialQuery, initialSource);
+      void handleCreate(cleanQuery, initialSource, cleanQuery);
     }, 350);
+
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialQuery, initialSource]);
@@ -54,8 +94,7 @@ function NewLessonContent() {
     e.preventDefault();
     const combined = content.trim() || title.trim();
     if (!combined) return;
-    setCreating(true);
-    handleCreate(combined, source);
+    void handleCreate(combined, source, title.trim() || combined);
   }
 
   const kindBadge: Record<NoteKind, { label: string; hint: string }> = {
