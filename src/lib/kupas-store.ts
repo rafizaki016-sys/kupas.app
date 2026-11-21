@@ -135,121 +135,25 @@ export const DEFAULT_NOTES: StudyNote[] = [
       ],
     },
   },
-  {
-    id: "n2",
-    title: "Sel dan organel",
-    kind: "pdf",
-    sourceInput: "Struktur dasar sel prokariotik dan eukariotik serta fungsi organel utama.",
-    snippet:
-      "Sel adalah satuan terkecil makhluk hidup. Organel seperti mitokondria dan kloroplas punya tugas masing-masing di dalam sel.",
-    createdAt: "2026-11-19T03:00:00Z",
-    chapterCount: 5,
-    chaptersDone: 5,
-    chapters: [
-      {
-        title: "Bab 1 · Konsep Dasar Sel",
-        summary: "Sel merupakan unit struktural dan fungsional terkecil makhluk hidup.",
-        points: [
-          "Dibagi menjadi sel prokariotik (tanpa membran inti) dan eukariotik (memiliki membran inti).",
-          "Membran sel mengatur keluar-masuk zat secara selektif permeabel.",
-        ],
-      },
-      {
-        title: "Bab 2 · Nukleus & Energi Sel",
-        summary: "Pusat kendali genetik dan penghasil energi ATP.",
-        points: [
-          "Nukleus menyimpan DNA dan mengatur aktivitas sel.",
-          "Mitokondria berperan dalam respirasi sel menghasilkan energi (ATP).",
-        ],
-      },
-    ],
-    flashcards: [
-      {
-        id: "fc-n2-1",
-        front: "Apa fungsi utama mitokondria?",
-        back: "Menghasilkan energi (ATP) melalui proses respirasi sel.",
-      },
-      {
-        id: "fc-n2-2",
-        front: "Organel mana yang khusus ada pada sel tumbuhan untuk fotosintesis?",
-        back: "Kloroplas (mengandung klorofil).",
-      },
-    ],
-    quiz: [
-      {
-        question: "Organel yang berfungsi mengontrol seluruh kegiatan sel adalah...",
-        options: ["Ribosom", "Nukleus", "Vakuola", "Lisosom"],
-        correctIndex: 1,
-        explanation: "Nukleus (inti sel) mengandung materi genetik dan mengendalikan aktivitas sel.",
-      },
-    ],
-    mindmapRoot: {
-      label: "Sel & Organel",
-      branches: [
-        { title: "Nukleus", detail: "Pusat informasi genetik (DNA)" },
-        { title: "Mitokondria", detail: "Penghasil energi ATP" },
-        { title: "Kloroplas", detail: "Tempat fotosintesis pada tumbuhan" },
-      ],
-    },
-  },
-  {
-    id: "n3",
-    title: "Rekaman kelas sejarah",
-    kind: "audio",
-    sourceInput: "Perkembangan pergerakan nasional Indonesia awal abad ke-20.",
-    snippet:
-      "Latar belakang pergerakan nasional, tokoh-tokohnya, dan urutan peristiwa penting dari awal abad ke-20.",
-    createdAt: "2026-11-17T03:00:00Z",
-    chapterCount: 6,
-    chaptersDone: 1,
-    chapters: [
-      {
-        title: "Bab 1 · Latar Belakang Pergerakan Nasional",
-        summary:
-          "Kesadaran baru akibat Politik Etis, pendidikan modern, dan tekanan kolonialisme mendorong organisasi modern.",
-        points: [
-          "Perubahan strategi perjuangan dari kedaerahan/fisik ke organisasi modern.",
-          "Munculnya golongan terpelajar sebagai penggerak kesadaran kebangsaan.",
-        ],
-      },
-    ],
-    flashcards: [
-      {
-        id: "fc-n3-1",
-        front: "Apa ciri utama pergerakan nasional dibanding perjuangan abad ke-19?",
-        back: "Bersifat nasional, terorganisasi modern, dan dipimpin kaum terpelajar.",
-      },
-    ],
-    quiz: [
-      {
-        question: "Faktor internal yang memicu lahirnya pergerakan nasional adalah...",
-        options: [
-          "Kenangan kejayaan masa lalu dan penderitaan akibat penjajahan",
-          "Kemenangan Jepang atas Rusia (1905)",
-          "Masuknya paham liberalisme Eropa",
-          "Perang Dunia I",
-        ],
-        correctIndex: 0,
-        explanation: "Kesadaran nasib yang sama serta kenangan masa lalu menjadi pendorong internal utama.",
-      },
-    ],
-    mindmapRoot: {
-      label: "Pergerakan Nasional",
-      branches: [
-        { title: "Faktor Internal", detail: "Kesadaran senasib & sejarah bangsa" },
-        { title: "Faktor Eksternal", detail: "Kebangkitan Asia & ideologi baru" },
-      ],
-    },
-  },
 ];
 
 export function cleanTopicFromInput(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return "";
 
+  const strippedCommand = trimmed
+    .replace(
+      /^(buatkan|buat|tolong buatkan|tolong|bantu buatkan|bantu)\s+(pelajaran|materi|catatan|ringkasan|pembelajaran)\s+(dari|tentang|mengenai|soal)?\s*/i,
+      "",
+    )
+    .replace(/^(materi|pelajaran|catatan|ringkasan)\s+(tentang|mengenai)?\s*/i, "")
+    .trim();
+
+  const target = strippedCommand || trimmed;
+
   try {
-    if (/^https?:\/\//i.test(trimmed)) {
-      const url = new URL(trimmed);
+    if (/^https?:\/\//i.test(target)) {
+      const url = new URL(target);
       const segments = url.pathname.split("/").filter(Boolean);
       const candidate = [...segments].reverse().find(
         (seg) =>
@@ -265,10 +169,11 @@ export function cleanTopicFromInput(raw: string): string {
           .trim();
 
         if (cleaned.length >= 4) {
-          return cleaned
+          const titled = cleaned
             .split(" ")
             .map((w) => (w.length > 0 ? w[0].toUpperCase() + w.slice(1) : w))
             .join(" ");
+          return titled;
         }
       }
 
@@ -278,7 +183,10 @@ export function cleanTopicFromInput(raw: string): string {
     // abaikan jika bukan URL valid
   }
 
-  return trimmed.replace(/\s+/g, " ");
+  const normalized = target.replace(/\s+/g, " ");
+  return normalized.length > 0
+    ? normalized[0].toUpperCase() + normalized.slice(1)
+    : "";
 }
 
 export function readStoredNotes(): StudyNote[] {
@@ -311,9 +219,10 @@ export function upsertStudyNote(note: StudyNote): StudyNote[] {
   return next;
 }
 
-export function generateStudyNoteFromInput(params: {
+export function buildRichSubjectNote(params: {
   source?: string;
   query?: string;
+  title?: string;
 }): StudyNote {
   const kind: NoteKind =
     params.source === "record"
@@ -324,111 +233,312 @@ export function generateStudyNoteFromInput(params: {
           ? "youtube"
           : "text";
 
-  const cleanInput = cleanTopicFromInput(params.query || "");
-  const baseTitle =
-    cleanInput.length > 0
-      ? cleanInput.length > 72
-        ? `${cleanInput.slice(0, 69).trim()}...`
-        : cleanInput
-      : kind === "audio"
-        ? "Catatan Rekaman Audio"
-        : kind === "pdf"
-          ? "Ringkasan Dokumen Unggahan"
-          : kind === "youtube"
-            ? "Ringkasan Materi Tautan"
-            : "Catatan Belajar Baru";
-
-  const topicLabel = cleanInput || baseTitle;
+  const rawQuery = (params.query || "").trim();
+  const cleanTitle = cleanTopicFromInput(params.title || rawQuery) || "Materi Belajar";
+  const lower = `${cleanTitle} ${rawQuery}`.toLowerCase();
   const id = `note-${Date.now()}`;
 
+  // Jika pengguna menempel isi teks/catatan panjang, urai menjadi bab dari isi aslinya
+  const sentences = rawQuery
+    .replace(/\r\n/g, "\n")
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 15);
+
+  if (sentences.length >= 3 && rawQuery.length > 140) {
+    const perGroup = Math.max(2, Math.ceil(sentences.length / 3));
+    const groups = [
+      sentences.slice(0, perGroup),
+      sentences.slice(perGroup, perGroup * 2),
+      sentences.slice(perGroup * 2),
+    ].filter((g) => g.length > 0);
+
+    const chapters: ChapterItem[] = groups.map((grp, idx) => ({
+      title: `Bab ${idx + 1} · ${
+        idx === 0 ? "Konsep & Dasar" : idx === 1 ? "Penjelasan & Mekanisme" : "Penerapan & Kesimpulan"
+      }`,
+      summary: grp[0],
+      points: grp.slice(1).length > 0 ? grp.slice(1) : [grp[0]],
+    }));
+
+    return {
+      id,
+      title: cleanTitle.slice(0, 72),
+      kind,
+      sourceInput: rawQuery,
+      snippet: sentences.slice(0, 2).join(" ").slice(0, 180),
+      createdAt: new Date().toISOString(),
+      chapterCount: chapters.length,
+      chaptersDone: 0,
+      chapters,
+      flashcards: chapters.map((ch, idx) => ({
+        id: `${id}-fc-${idx + 1}`,
+        front: `Apa inti dari ${ch.title}?`,
+        back: `${ch.summary} ${ch.points[0] || ""}`.trim(),
+      })),
+      quiz: [
+        {
+          question: `Pernyataan mana yang paling tepat terkait ${chapters[0]?.title || cleanTitle}?`,
+          options: [
+            chapters[0]?.summary || sentences[0],
+            "Mengabaikan seluruh data pada materi sumber",
+            "Menukar hasil akhir tanpa melalui langkah dasar",
+            "Menghapus semua contoh penerapan",
+          ],
+          correctIndex: 0,
+          explanation: chapters[0]?.points[0] || chapters[0]?.summary || "",
+        },
+      ],
+      mindmapRoot: {
+        label: cleanTitle.slice(0, 46),
+        branches: chapters.map((ch) => ({
+          title: ch.title.replace(/^Bab\s*\d+\s*·\s*/i, ""),
+          detail: ch.summary,
+        })),
+      },
+    };
+  }
+
+  // Topik Kalkulus (Limit, Turunan, Integral)
+  if (lower.includes("kalkulus") || lower.includes("limit") || lower.includes("turunan") || lower.includes("integral")) {
+    return {
+      id,
+      title: cleanTitle.toLowerCase() === "kalkulus" ? "Kalkulus: Limit, Turunan & Integral" : cleanTitle,
+      kind,
+      sourceInput: rawQuery || cleanTitle,
+      snippet:
+        "Kalkulus mempelajari perubahan dan akumulasi: Limit mendekati nilai tertentu, Turunan mengukur laju perubahan sesaat, dan Integral menghitung luas/akumulasi.",
+      createdAt: new Date().toISOString(),
+      chapterCount: 3,
+      chaptersDone: 0,
+      chapters: [
+        {
+          title: "Bab 1 · Konsep Limit Fungsi",
+          summary:
+            "Limit melihat nilai yang didekati f(x) saat x mendekati suatu titik c, meskipun di titik c fungsinya mungkin tak terdefinisi.",
+          points: [
+            "Notasi: lim(x → c) f(x) = L artinya nilai f(x) mendekati L saat x mendekati c dari kiri maupun kanan.",
+            "Jika limit kiri ≠ limit kanan, maka nilai limit di titik tersebut tidak ada.",
+            "Contoh: lim(x → 2) (x² − 4)/(x − 2) = lim(x → 2) (x + 2) = 4.",
+          ],
+        },
+        {
+          title: "Bab 2 · Turunan (Laju Perubahan Sesaat)",
+          summary:
+            "Turunan f'(x) menyatakan kemiringan garis singgung kurva atau kecepatan perubahan suatu besaran pada saat tertentu.",
+          points: [
+            "Aturan pangkat: jika f(x) = xⁿ, maka f'(x) = n · xⁿ⁻¹.",
+            "Contoh: untuk f(x) = x³, turunannya f'(x) = 3x²; pada x = 2 nilainya 3(2)² = 12.",
+            "Dalam gerak, turunan posisi s(t) terhadap waktu adalah kecepatan v(t), dan turunan kecepatan adalah percepatan a(t).",
+          ],
+        },
+        {
+          title: "Bab 3 · Integral (Akumulasi & Luas Daerah)",
+          summary:
+            "Integral merupakan kebalikan dari turunan (anti-turunan) dan dipakai untuk menghitung luas daerah di bawah kurva serta total akumulasi.",
+          points: [
+            "Integral tak tentu aturan pangkat: ∫ xⁿ dx = [1/(n + 1)] xⁿ⁺¹ + C (untuk n ≠ −1).",
+            "Contoh: ∫ 6x² dx = 2x³ + C.",
+            "Integral tentu ∫[a,b] f(x) dx menghitung nilai akumulasi dari batas bawah a hingga batas atas b.",
+          ],
+        },
+      ],
+      flashcards: [
+        {
+          id: `${id}-fc-1`,
+          front: "Apa makna limit lim(x → c) f(x) = L?",
+          back: "Nilai f(x) mendekati L ketika x semakin dekat ke c (dari kiri dan kanan), tanpa harus bergantung pada nilai f(c).",
+        },
+        {
+          id: `${id}-fc-2`,
+          front: "Berapa turunan dari f(x) = 4x³ + 2x?",
+          back: "f'(x) = 12x² + 2 (menggunakan aturan pangkat n · xⁿ⁻¹ pada tiap suku).",
+        },
+        {
+          id: `${id}-fc-3`,
+          front: "Apa hubungan turunan dan integral secara sederhana?",
+          back: "Integral (anti-turunan) adalah proses kebalikan dari turunan dan digunakan untuk menghitung akumulasi atau luas daerah.",
+        },
+      ],
+      quiz: [
+        {
+          question: "Jika f(x) = 5x², berapakah turunan pertama f'(x)?",
+          options: ["5x", "10x", "10x²", "25x"],
+          correctIndex: 1,
+          explanation: "Dengan aturan pangkat, d/dx (5x²) = 5 · 2x²⁻¹ = 10x.",
+        },
+        {
+          question: "Berapakah hasil dari ∫ 3x² dx?",
+          options: ["6x + C", "x³ + C", "3x³ + C", "x² + C"],
+          correctIndex: 1,
+          explanation: "∫ 3x² dx = 3 · (1/3)x³ + C = x³ + C.",
+        },
+      ],
+      mindmapRoot: {
+        label: "Kalkulus",
+        branches: [
+          { title: "Limit Fungsi", detail: "Pendekatan nilai saat x → c" },
+          { title: "Turunan f'(x)", detail: "Kemiringan & laju perubahan sesaat" },
+          { title: "Integral ∫", detail: "Anti-turunan, luas & akumulasi" },
+        ],
+      },
+    };
+  }
+
+  // Topik Matematika Diskrit
+  if (lower.includes("diskrit") || lower.includes("himpunan") || lower.includes("graf") || lower.includes("kombinatorika")) {
+    return {
+      id,
+      title: cleanTitle,
+      kind,
+      sourceInput: rawQuery || cleanTitle,
+      snippet:
+        "Membahas struktur objek diskrit (terpisah dan terbilang): himpunan & relasi, kombinatorika (permutasi & kombinasi), serta teori graf.",
+      createdAt: new Date().toISOString(),
+      chapterCount: 3,
+      chaptersDone: 0,
+      chapters: [
+        {
+          title: "Bab 1 · Himpunan, Relasi & Fungsi",
+          summary:
+            "Himpunan adalah kumpulan objek yang terdefinisi jelas, sedangkan fungsi memetakan setiap anggota domain ke tepat satu anggota kodomain.",
+          points: [
+            "Gabungan (A ∪ B) memuat anggota A atau B; irisan (A ∩ B) memuat anggota yang ada di keduanya.",
+            "Selisih (A − B) memuat anggota A yang tidak ada di B.",
+            "Fungsi injektif (satu-satu), surjektif (onto), dan bijektif (korespondensi satu-satu).",
+          ],
+        },
+        {
+          title: "Bab 2 · Kombinatorika (Permutasi & Kombinasi)",
+          summary:
+            "Teknik pencacahan untuk menghitung banyak susunan atau pemilihan tanpa mendaftar satu per satu.",
+          points: [
+            "Permutasi P(n, r) = n! / (n − r)! — urutan diperhatikan (misal: susunan ketua & sekretaris).",
+            "Kombinasi C(n, r) = n! / (r!(n − r)!) — urutan tidak diperhatikan (misal: memilih tim).",
+            "Aturan perkalian dipakai untuk tahap berurutan; aturan penjumlahan untuk pilihan saling lepas.",
+          ],
+        },
+        {
+          title: "Bab 3 · Teori Graf & Derajat Simpul",
+          summary:
+            "Graf G = (V, E) terdiri atas himpunan simpul (V) dan sisi (E) untuk memodelkan jaringan dan hubungan antar-objek.",
+          points: [
+            "Teorema jabat tangan: jumlah derajat seluruh simpul = 2 × |E|.",
+            "Graf terhubung memiliki jalur antara setiap pasang simpul.",
+            "Digunakan pada pemetaan rute, jaringan komputer, dan penjadwalan.",
+          ],
+        },
+      ],
+      flashcards: [
+        {
+          id: `${id}-fc-1`,
+          front: "Kapan memakai kombinasi dibanding permutasi?",
+          back: "Pakai kombinasi saat urutan tidak penting (seperti memilih anggota kelompok), dan permutasi saat urutan penting.",
+        },
+        {
+          id: `${id}-fc-2`,
+          front: "Apa isi Teorema Jabat Tangan pada graf?",
+          back: "Jumlah derajat seluruh simpul pada graf selalu sama dengan dua kali jumlah sisinya (∑ deg(v) = 2|E|).",
+        },
+      ],
+      quiz: [
+        {
+          question: "Jika sebuah graf memiliki 6 sisi, berapakah jumlah derajat seluruh simpulnya?",
+          options: ["3", "6", "12", "18"],
+          correctIndex: 2,
+          explanation: "Jumlah derajat seluruh simpul = 2 × jumlah sisi = 2 × 6 = 12.",
+        },
+      ],
+      mindmapRoot: {
+        label: cleanTitle.slice(0, 46),
+        branches: [
+          { title: "Himpunan & Fungsi", detail: "Irisan, gabungan & pemetaan" },
+          { title: "Kombinatorika", detail: "Permutasi (urutan) & Kombinasi" },
+          { title: "Teori Graf", detail: "Simpul, sisi & derajat" },
+        ],
+      },
+    };
+  }
+
+  // Fallback tematik terstruktur untuk topik umum lainnya
   return {
     id,
-    title: baseTitle,
+    title: cleanTitle,
     kind,
-    sourceInput: (params.query || "").trim() || topicLabel,
-    snippet: `Pembahasan terstruktur tentang ${topicLabel}: definisi & konsep inti, prinsip kerja serta penerapan, ditambah kartu hafalan dan latihan soal.`,
+    sourceInput: rawQuery || cleanTitle,
+    snippet: `Ringkasan inti ${cleanTitle}: pengertian dasar, komponen atau prinsip utama, serta langkah penerapan yang mudah dipahami.`,
     createdAt: new Date().toISOString(),
     chapterCount: 3,
     chaptersDone: 0,
     chapters: [
       {
-        title: `Bab 1 · Definisi, Ruang Lingkup & Konsep Inti ${topicLabel}`,
-        summary: `Memahami pengertian dasar, istilah penting, dan kerangka utama dalam ${topicLabel} secara sistematis.`,
+        title: `Bab 1 · Pengertian & Konsep Dasar ${cleanTitle}`,
+        summary: `${cleanTitle} berfokus pada pemahaman ide pokok, istilah utama, dan tujuan penerapannya secara runtut.`,
         points: [
-          `Mendefinisikan ${topicLabel} beserta peran utamanya dalam konteks pembahasan.`,
-          "Mengenali istilah kunci, komponen utama, dan perbedaan konsep yang sering tertukar.",
-          "Menghubungkan konsep dasar dengan contoh nyata agar lebih mudah dipahami.",
+          `Definisi inti: memahami apa itu ${cleanTitle} dan mengapa konsep ini penting.`,
+          "Istilah kunci: membedakan istilah utama agar tidak tertukar saat membaca atau mengerjakan soal.",
+          "Gambaran umum: melihat keterkaitan antarbagian sebelum masuk ke detail.",
         ],
       },
       {
-        title: `Bab 2 · Prinsip Kerja, Langkah & Penerapan ${topicLabel}`,
-        summary: `Menguraikan mekanisme, aturan atau rumus/alur kerja, serta contoh penerapan praktis dari ${topicLabel}.`,
+        title: `Bab 2 · Prinsip Kerja & Langkah Penerapan`,
+        summary: `Menjelaskan bagaimana konsep pada ${cleanTitle} bekerja dalam praktik serta langkah-langkah menyelesaikannya.`,
         points: [
-          "Menyusun alur langkah penyelesaian dari kondisi awal hingga hasil akhir.",
-          "Mengidentifikasi syarat, batasan, atau faktor yang memengaruhi hasil penerapan.",
-          "Menghindari kesalahan umum saat menerapkan konsep ke studi kasus atau soal.",
+          "Langkah 1: identifikasi kondisi awal, data, atau informasi utama yang diketahui.",
+          "Langkah 2: terapkan aturan, rumus, atau alur kerja yang sesuai dengan konteks.",
+          "Langkah 3: periksa kembali hasil akhir agar sesuai dengan syarat yang diminta.",
         ],
       },
       {
-        title: `Bab 3 · Evaluasi, Catatan Penting & Penguatan Ingatan`,
-        summary: `Menguji pemahaman secara aktif melalui cek pemahaman, flashcard, kuis, dan tanya jawab materi.`,
+        title: `Bab 3 · Kesalahan Umum & Ringkasan Inti`,
+        summary: `Merangkum hal yang perlu dihindari dan poin utama yang paling sering keluar dalam latihan atau ujian.`,
         points: [
-          "Menyimpulkan poin-poin paling penting yang wajib diingat kembali sebelum ujian.",
-          "Menguji ketepatan pemahaman lewat soal latihan dan meninjau penjelasan jawabannya.",
-          "Mengulang kartu hafalan secara berkala untuk memperkuat retensi jangka panjang.",
+          "Hindari melompati langkah dasar atau mengabaikan syarat/satuan.",
+          "Uji pemahaman secara berkala lewat soal latihan dan kartu hafalan.",
         ],
       },
     ],
     flashcards: [
       {
         id: `${id}-fc-1`,
-        front: `Apa inti pembahasan dari ${topicLabel}?`,
-        back: `${topicLabel} menguraikan konsep dasar, prinsip/aturan utama, serta langkah penerapannya secara runtut dan terstruktur.`,
+        front: `Apa fokus utama pada Bab 1 ${cleanTitle}?`,
+        back: `Memahami definisi dasar, istilah penting, dan gambaran umum ${cleanTitle} sebelum masuk ke penerapan.`,
       },
       {
         id: `${id}-fc-2`,
-        front: `Apa hal utama yang perlu diperhatikan saat menerapkan ${topicLabel}?`,
-        back: "Pahami definisi dan syarat berlakunya terlebih dahulu, ikuti langkah secara berurutan, lalu periksa kembali hasilnya.",
-      },
-      {
-        id: `${id}-fc-3`,
-        front: `Bagaimana cara terbaik menguasai ${topicLabel} hingga tuntas?`,
-        back: "Pelajari tiap bab secara bertahap, kerjakan cek pemahaman dan kuis, lalu ulangi poin kunci melalui kartu hafalan.",
+        front: `Bagaimana alur penerapan yang rapi untuk ${cleanTitle}?`,
+        back: "Identifikasi informasi awal, terapkan prinsip/aturan yang tepat, lalu periksa kembali hasil akhirnya.",
       },
     ],
     quiz: [
       {
-        question: `Langkah paling tepat saat mempelajari ${topicLabel} adalah...`,
+        question: `Langkah paling efektif setelah memahami konsep dasar ${cleanTitle} adalah...`,
         options: [
-          "Memahami konsep dasar dan alurnya per bab sebelum mengerjakan latihan soal",
-          "Menghafal tanpa memahami makna, syarat, dan penerapannya",
-          "Melewatkan evaluasi dan pengulangan materi",
-          "Membaca sekaligus tanpa membaginya per bagian",
+          "Menerapkannya pada contoh/latihan dan memeriksa kembali hasilnya",
+          "Melewatkan latihan sama sekali",
+          "Menghafal istilah tanpa memahami maknanya",
+          "Mengabaikan langkah-langkah penyelesaian",
         ],
         correctIndex: 0,
-        explanation: `Memahami konsep dasar ${topicLabel} per bab membantu kamu menerapkan aturan dengan tepat saat mengerjakan soal.`,
-      },
-      {
-        question: `Mengapa penting meninjau penjelasan setelah menjawab soal tentang ${topicLabel}?`,
-        options: [
-          "Untuk memperbaiki kesalahan konsep dan memperkuat pemahaman langkah penyelesaian",
-          "Agar jumlah halaman catatan bertambah",
-          "Supaya tidak perlu lagi membaca materi",
-          "Karena semua soal memiliki pola yang sama persis tanpa syarat",
-        ],
-        correctIndex: 0,
-        explanation: "Meninjau penjelasan membantu meluruskan miskonsepsi sejak awal sebelum lanjut ke materi berikutnya.",
+        explanation: "Menerapkan konsep pada latihan dan memeriksa hasil memperkuat pemahaman serta ketelitian.",
       },
     ],
     mindmapRoot: {
-      label: topicLabel.slice(0, 46),
+      label: cleanTitle.slice(0, 46),
       branches: [
-        { title: "Konsep & Definisi", detail: `Dasar-dasar & istilah inti ${topicLabel}` },
-        { title: "Prinsip & Penerapan", detail: "Alur kerja, syarat & contoh kasus" },
-        { title: "Evaluasi & Hafalan", detail: "Kuis, flashcard & ringkasan inti" },
+        { title: "Konsep Dasar", detail: `Definisi & istilah inti ${cleanTitle}` },
+        { title: "Penerapan", detail: "Langkah kerja & contoh kasus" },
+        { title: "Evaluasi", detail: "Kesalahan umum & latihan" },
       ],
     },
   };
+}
+
+export function generateStudyNoteFromInput(params: {
+  source?: string;
+  query?: string;
+}): StudyNote {
+  return buildRichSubjectNote(params);
 }
 
 export function buildComprehensiveNoteFromSource(params: {
@@ -436,101 +546,5 @@ export function buildComprehensiveNoteFromSource(params: {
   query?: string;
   title?: string;
 }): StudyNote {
-  const rawText = (params.query || "").trim();
-  const cleanTitle = cleanTopicFromInput(params.title || rawText);
-  const base = generateStudyNoteFromInput({
-    source: params.source,
-    query: cleanTitle || rawText,
-  });
-
-  const sentences = rawText
-    .replace(/\r\n/g, "\n")
-    .split(/(?<=[.!?])\s+|\n+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length >= 12);
-
-  if (sentences.length < 2) {
-    return {
-      ...base,
-      title: cleanTitle || base.title,
-      sourceInput: rawText || base.sourceInput,
-    };
-  }
-
-  const chunkSize = Math.max(2, Math.ceil(sentences.length / 3));
-  const chapterSpecs = [
-    {
-      prefix: "Bab 1 · Konsep Inti & Latar Belakang",
-      slice: sentences.slice(0, chunkSize),
-    },
-    {
-      prefix: "Bab 2 · Uraian Mendalam & Mekanisme",
-      slice: sentences.slice(chunkSize, chunkSize * 2),
-    },
-    {
-      prefix: "Bab 3 · Penerapan, Catatan Penting & Kesimpulan",
-      slice: sentences.slice(chunkSize * 2),
-    },
-  ].filter((c) => c.slice.length > 0);
-
-  const richChapters = chapterSpecs.map((spec) => ({
-    title: spec.prefix,
-    summary: spec.slice[0],
-    points: spec.slice.length > 1 ? spec.slice : [spec.slice[0]],
-  }));
-
-  const richFlashcards = richChapters.slice(0, 4).map((ch, idx) => ({
-    id: `${base.id}-fc-${idx + 1}`,
-    front: `Jelaskan poin utama pada "${ch.title}"`,
-    back: ch.points.join(" — "),
-  }));
-
-  const richQuiz = [
-    {
-      question: `Poin manakah yang paling sesuai dengan pembahasan "${richChapters[0]?.title || base.title}"?`,
-      options: [
-        richChapters[0]?.summary || base.snippet,
-        "Mengabaikan konsep dasar dan langsung melompat tanpa urutan",
-        "Menyamaratakan semua istilah tanpa membedakan fungsinya",
-        "Menghapus seluruh contoh dan catatan penerapan",
-      ],
-      correctIndex: 0,
-      explanation: `Pada ${richChapters[0]?.title || "bab pertama"}, fokus utamanya adalah: ${
-        richChapters[0]?.summary || base.snippet
-      }`,
-    },
-    ...(richChapters[1]
-      ? [
-          {
-            question: `Apa yang dibahas pada "${richChapters[1].title}"?`,
-            options: [
-              richChapters[1].summary,
-              "Hanya daftar tautan luar tanpa isi materi",
-              "Aturan yang bertentangan dengan seluruh konsep sebelumnya",
-              "Pengulangan judul tanpa penjelasan",
-            ],
-            correctIndex: 0,
-            explanation: richChapters[1].points.join(" "),
-          },
-        ]
-      : []),
-  ];
-
-  return {
-    ...base,
-    title: cleanTitle || base.title,
-    sourceInput: rawText,
-    snippet: sentences.slice(0, 2).join(" ").slice(0, 180),
-    chapterCount: richChapters.length,
-    chapters: richChapters,
-    flashcards: richFlashcards,
-    quiz: richQuiz,
-    mindmapRoot: {
-      label: (cleanTitle || base.title).slice(0, 46),
-      branches: richChapters.map((ch, idx) => ({
-        title: ch.title.replace(/^Bab\s*\d+\s*·\s*/i, ""),
-        detail: ch.points[idx] || ch.summary,
-      })),
-    },
-  };
+  return buildRichSubjectNote(params);
 }
