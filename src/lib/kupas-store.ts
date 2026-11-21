@@ -243,6 +243,44 @@ export const DEFAULT_NOTES: StudyNote[] = [
   },
 ];
 
+export function cleanTopicFromInput(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+
+  try {
+    if (/^https?:\/\//i.test(trimmed)) {
+      const url = new URL(trimmed);
+      const segments = url.pathname.split("/").filter(Boolean);
+      const candidate = [...segments].reverse().find(
+        (seg) =>
+          !/^(id|en|artikel|article|post|blog|news|read|watch|v|shorts)$/i.test(seg) &&
+          seg.replace(/[-_]+/g, " ").trim().length >= 4,
+      );
+
+      if (candidate) {
+        const cleaned = decodeURIComponent(candidate)
+          .replace(/\.[a-z0-9]+$/i, "")
+          .replace(/[-_]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        if (cleaned.length >= 4) {
+          return cleaned
+            .split(" ")
+            .map((w) => (w.length > 0 ? w[0].toUpperCase() + w.slice(1) : w))
+            .join(" ");
+        }
+      }
+
+      return url.hostname.replace(/^www\./, "");
+    }
+  } catch {
+    // abaikan jika bukan URL valid
+  }
+
+  return trimmed.replace(/\s+/g, " ");
+}
+
 export function readStoredNotes(): StudyNote[] {
   if (typeof window === "undefined") return DEFAULT_NOTES;
   try {
@@ -286,11 +324,11 @@ export function generateStudyNoteFromInput(params: {
           ? "youtube"
           : "text";
 
-  const cleanInput = (params.query || "").trim();
+  const cleanInput = cleanTopicFromInput(params.query || "");
   const baseTitle =
     cleanInput.length > 0
-      ? cleanInput.length > 64
-        ? `${cleanInput.slice(0, 61).trim()}...`
+      ? cleanInput.length > 72
+        ? `${cleanInput.slice(0, 69).trim()}...`
         : cleanInput
       : kind === "audio"
         ? "Catatan Rekaman Audio"
@@ -307,68 +345,68 @@ export function generateStudyNoteFromInput(params: {
     id,
     title: baseTitle,
     kind,
-    sourceInput: topicLabel,
-    snippet: `Ringkasan terstruktur untuk "${topicLabel}". Terbagi menjadi beberapa bab inti, kartu hafalan berjarak, dan soal latihan.`,
+    sourceInput: (params.query || "").trim() || topicLabel,
+    snippet: `Ringkasan terstruktur tentang ${topicLabel}: konsep inti, penerapan, kartu hafalan, dan latihan soal.`,
     createdAt: new Date().toISOString(),
     chapterCount: 3,
     chaptersDone: 1,
     chapters: [
       {
-        title: `Bab 1 · Pengenalan ${topicLabel}`,
-        summary: `Gambaran umum, definisi inti, dan ruang lingkup utama dari ${topicLabel}.`,
+        title: `Bab 1 · Pengertian & Konsep Dasar ${topicLabel}`,
+        summary: `Memahami definisi, ruang lingkup, dan istilah utama dalam ${topicLabel} secara runtut.`,
         points: [
-          `Memahami istilah kunci dan konsep dasar terkait ${topicLabel}.`,
-          "Mengenali mengapa topik ini penting dalam konteks mata pelajaran.",
+          `Mengenali definisi pokok dan karakteristik utama ${topicLabel}.`,
+          "Membedakan konsep inti dengan contoh kasus di kehidupan nyata atau bidang terkait.",
         ],
       },
       {
-        title: `Bab 2 · Prinsip & Langkah Utama`,
-        summary: `Penjabaran sistematis aturan, alur kerja, atau contoh penerapan dari ${topicLabel}.`,
+        title: `Bab 2 · Prinsip Kerja & Penerapan ${topicLabel}`,
+        summary: `Menelaah aturan, pola, atau langkah sistematis saat menerapkan ${topicLabel}.`,
         points: [
-          "Uraikan hubungan antar-konsep langkah demi langkah.",
-          "Catat pengecualian atau kondisi khusus yang sering keluar di soal.",
+          "Mengikuti alur langkah dari dasar ke kasus yang lebih terstruktur.",
+          "Memperhatikan syarat, batasan, atau kekhususan pada setiap bagian.",
         ],
       },
       {
-        title: `Bab 3 · Latihan & Evaluasi Pemahaman`,
-        summary: `Uji pemahaman melalui flashcard dan kuis latihan sebelum pindah ke materi berikutnya.`,
+        title: `Bab 3 · Latihan & Penguatan Ingatan`,
+        summary: `Menguji pemahaman melalui pertanyaan cek pemahaman, flashcard, dan kuis.`,
         points: [
-          "Ulang kartu hafalan secara berkala agar melekat di ingatan jangka panjang.",
-          "Tanyakan bagian yang masih membingungkan di panel Tanya Materi.",
+          "Menjawab soal latihan untuk memastikan pemahaman konsep sebelum lanjut.",
+          "Mengulang kartu hafalan berkala dan memakai Tanya Materi untuk bagian yang belum jelas.",
         ],
       },
     ],
     flashcards: [
       {
         id: `${id}-fc-1`,
-        front: `Apa inti utama dari "${topicLabel}"?`,
-        back: `Konsep pokok ${topicLabel} beserta aturan atau prinsip dasarnya yang perlu dipahami terlebih dahulu.`,
+        front: `Apa gagasan utama dari ${topicLabel}?`,
+        back: `${topicLabel} membahas konsep dasar, prinsip/aturan utama, serta penerapannya secara sistematis.`,
       },
       {
         id: `${id}-fc-2`,
-        front: `Bagaimana cara terbaik mengulang materi "${topicLabel}" sebelum ujian?`,
-        back: "Baca ringkasan per bab, uji diri dengan kartu hafalan & kuis, lalu bahas bagian sulit dengan Tanya Materi.",
+        front: `Bagaimana cara terbaik menguasai ${topicLabel} lebih cepat?`,
+        back: "Pahami definisi & alurnya per bab, kerjakan cek pemahaman dan kuis, lalu ulangi lewat flashcard.",
       },
     ],
     quiz: [
       {
-        question: `Langkah paling efektif saat mempelajari topik "${topicLabel}" adalah...`,
+        question: `Langkah paling tepat saat mempelajari ${topicLabel} adalah...`,
         options: [
-          "Memahami konsep dasar dan alurnya per bab",
-          "Menghafal satu kalimat tanpa memahami maknanya",
-          "Melewatkan latihan soal",
-          "Membaca sekaligus tanpa jeda ulangan",
+          "Memahami konsep dasar dan alurnya per bab sebelum latihan soal",
+          "Menghafal tanpa memahami makna atau penerapannya",
+          "Melewatkan evaluasi dan pengulangan materi",
+          "Membaca sekaligus tanpa membaginya per bagian",
         ],
         correctIndex: 0,
-        explanation: "Memahami alur konsep per bab membuat ingatan lebih kuat saat mengerjakan variasi soal.",
+        explanation: `Memahami konsep dasar ${topicLabel} per bab membantu kamu menerapkan aturan dengan tepat saat mengerjakan soal.`,
       },
     ],
     mindmapRoot: {
-      label: topicLabel.slice(0, 40),
+      label: topicLabel.slice(0, 46),
       branches: [
-        { title: "Definisi & Konsep", detail: `Pokok dasar ${topicLabel}` },
-        { title: "Penerapan & Contoh", detail: "Contoh kasus dan latihan soal" },
-        { title: "Ulangan (SRS & Kuis)", detail: "Flashcard dan evaluasi mandiri" },
+        { title: "Konsep & Definisi", detail: `Dasar-dasar ${topicLabel}` },
+        { title: "Penerapan", detail: "Contoh dan penggunaan praktis" },
+        { title: "Evaluasi", detail: "Kuis, flashcard & tanya jawab" },
       ],
     },
   };
