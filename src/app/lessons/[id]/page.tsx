@@ -192,7 +192,6 @@ export default function LessonDetailPage() {
         label: "Peta konsep dalam bab",
         heading: "Hubungan konsep inti di bab ini",
         body: "Perhatikan bagaimana konsep utama terhubung dengan poin-poin penting pada bab ini sebelum lanjut ke cek pemahaman.",
-        bullets: currentChapter.points.length > 2 ? currentChapter.points.slice(2) : undefined,
         showDiagram: true,
       },
     ];
@@ -402,12 +401,6 @@ export default function LessonDetailPage() {
 
   // Mode Fokus Di Dalam Bab (Opsi 2: Langkah di samping + bilah tombol bawah)
   if (activeTab === "belajar" && inChapterRunner && currentChapter) {
-    const branchPoints = currentChapter.points.slice(0, 2);
-    const effectPoints =
-      currentChapter.points.length >= 2
-        ? [currentChapter.points[0], currentChapter.points[1]]
-        : ["Konsep inti", "Penerapan"];
-
     return (
       <div className="flex min-h-screen flex-col bg-[#faf6ee] text-[#1d2433]">
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b-[1.5px] border-[#1d2433] bg-[#fffdf8] px-4 sm:px-6">
@@ -570,24 +563,20 @@ export default function LessonDetailPage() {
                         </div>
 
                         <div className="grid w-full gap-4 sm:grid-cols-2">
-                          <div className="flex flex-col items-center space-y-2.5">
-                            <div className="w-full rounded-full border-[1.5px] border-[#1d2433] bg-white px-4 py-2 text-center text-xs font-bold text-[#1d2433]">
-                              {branchPoints[0] || "Konsep pertama"}
-                            </div>
-                            <div className="w-full rounded-full border-[1.5px] border-[#1d2433] bg-[#faf6ee] px-4 py-2 text-center text-xs font-semibold text-[#1d2433]">
-                              {effectPoints[0] || "Dampak / penerapan 1"}
-                            </div>
+                          <div className="rounded-2xl border-[1.5px] border-[#1d2433] bg-white p-3.5 text-center text-xs font-bold leading-relaxed text-[#1d2433]">
+                            {currentChapter.points[0] || "Konsep pertama"}
                           </div>
 
-                          <div className="flex flex-col items-center space-y-2.5">
-                            <div className="w-full rounded-full border-[1.5px] border-[#1d2433] bg-white px-4 py-2 text-center text-xs font-bold text-[#1d2433]">
-                              {branchPoints[1] || "Konsep kedua"}
-                            </div>
-                            <div className="w-full rounded-full border-[1.5px] border-[#1d2433] bg-[#faf6ee] px-4 py-2 text-center text-xs font-semibold text-[#1d2433]">
-                              {effectPoints[1] || "Dampak / penerapan 2"}
-                            </div>
+                          <div className="rounded-2xl border-[1.5px] border-[#1d2433] bg-white p-3.5 text-center text-xs font-bold leading-relaxed text-[#1d2433]">
+                            {currentChapter.points[1] || "Konsep kedua"}
                           </div>
                         </div>
+
+                        {currentChapter.points[2] && (
+                          <div className="w-full rounded-2xl border-[1.5px] border-[#1d2433] bg-[#faf6ee] p-3.5 text-center text-xs font-semibold leading-relaxed text-[#1d2433]">
+                            {currentChapter.points[2]}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
