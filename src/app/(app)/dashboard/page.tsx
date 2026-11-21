@@ -240,6 +240,10 @@ export default function DashboardPage() {
         flashcards: [
           {
             id: "fc-1",
+            
+        flashcards: [
+          {
+            id: "fc-1",
             front: `Apa inti utama dari "${trimmed.slice(0, 48)}"?`,
             back: "Poin konsep kunci yang dirangkum langsung dari materi yang kamu masukkan.",
           },
