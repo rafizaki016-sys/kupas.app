@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { generateStudyNoteFromInput, type StudyNote } from "@/lib/kupas-store";
+import {
+  cleanTopicFromInput,
+  generateStudyNoteFromInput,
+  type StudyNote,
+} from "@/lib/kupas-store";
 
 type GenerateBody = {
   title?: string;
@@ -8,14 +12,99 @@ type GenerateBody = {
 };
 
 function buildTopicSpecificNote(rawQuery: string, source?: string): StudyNote {
-  const base = generateStudyNoteFromInput({ source, query: rawQuery });
-  const qLower = rawQuery.toLowerCase();
+  const cleanTitle = cleanTopicFromInput(rawQuery);
+  const base = generateStudyNoteFromInput({ source, query: cleanTitle || rawQuery });
+  const qLower = `${rawQuery} ${cleanTitle}`.toLowerCase();
 
-  // Contoh bank konten terstruktur untuk topik yang sering diuji
-  if (qLower.includes("logika") || qLower.includes("proposisi") || qLower.includes("implikasi")) {
+  if (
+    qLower.includes("matematika diskrit") ||
+    qLower.includes("himpunan") ||
+    qLower.includes("graf") ||
+    qLower.includes("kombinatorika")
+  ) {
+    const displayTitle = cleanTitle || "Matematika Diskrit";
     return {
       ...base,
-      title: rawQuery.trim() || "Logika Matematika",
+      title: displayTitle,
+      snippet:
+        "Mempelajari struktur objek diskrit (terpisah/terhitung) seperti himpunan, logika, relasi & fungsi, kombinatorika, serta teori graf.",
+      chapterCount: 3,
+      chapters: [
+        {
+          title: "Bab 1 · Himpunan, Relasi & Fungsi",
+          summary:
+            "Matematika diskrit berfokus pada objek yang terpisah/terbilang, dimulai dari operasi himpunan serta pemetaan relasi dan fungsi.",
+          points: [
+            "Operasi dasar himpunan: gabungan (A ∪ B), irisan (A ∩ B), selisih (A − B), dan komplemen.",
+            "Fungsi memetakan setiap elemen domain tepat ke satu elemen kodomain.",
+          ],
+        },
+        {
+          title: "Bab 2 · Kombinatorika & Peluang Diskrit",
+          summary:
+            "Menghitung banyaknya kemungkinan susunan atau pemilihan tanpa mencacah satu per satu.",
+          points: [
+            "Aturan perkalian dipakai untuk kejadian berurutan/bersamaan; aturan penjumlahan untuk pilihan saling lepas.",
+            "Permutasi memperhatikan urutan (P(n,r)), sedangkan kombinasi tidak memperhatikan urutan (C(n,r)).",
+          ],
+        },
+        {
+          title: "Bab 3 · Teori Graf & Penerapan Komputasi",
+          summary:
+            "Graf terdiri atas simpul (vertex) dan sisi (edge) untuk memodelkan jaringan, rute, dan ketergantungan.",
+          points: [
+            "Jumlah derajat seluruh simpul pada graf sama dengan dua kali jumlah sisinya.",
+            "Diterapkan pada jaringan komputer, penjadwalan, dan pencarian jalur terpendek.",
+          ],
+        },
+      ],
+      flashcards: [
+        {
+          id: `${base.id}-fc-1`,
+          front: "Apa perbedaan utama permutasi dan kombinasi?",
+          back: "Permutasi memperhatikan urutan elemen, sedangkan kombinasi tidak memperhatikan urutan.",
+        },
+        {
+          id: `${base.id}-fc-2`,
+          front: "Apa komponen utama pembentuk sebuah graf?",
+          back: "Himpunan simpul (vertices/nodes) dan himpunan sisi (edges) yang menghubungkan simpul-simpul tersebut.",
+        },
+      ],
+      quiz: [
+        {
+          question: "Jika sebuah graf memiliki 5 sisi, berapakah jumlah derajat seluruh simpulnya?",
+          options: ["5", "10", "15", "20"],
+          correctIndex: 1,
+          explanation: "Menurut teorema jabat tangan (handshaking lemma), jumlah derajat semua simpul = 2 × jumlah sisi = 2 × 5 = 10.",
+        },
+        {
+          question: "Kapan aturan perkalian digunakan dalam kombinatorika?",
+          options: [
+            "Saat memilih satu jalur dari beberapa pilihan saling lepas",
+            "Saat menyusun keputusan berurutan yang masing-masing punya pilihan sendiri",
+            "Saat mengurangkan dua himpunan",
+            "Saat menghitung komplemen himpunan",
+          ],
+          correctIndex: 1,
+          explanation: "Aturan perkalian mengalikan banyaknya cara pada setiap tahap yang dilakukan bersama/berurutan.",
+        },
+      ],
+      mindmapRoot: {
+        label: displayTitle.slice(0, 46),
+        branches: [
+          { title: "Himpunan & Relasi", detail: "Operasi himpunan & pemetaan fungsi" },
+          { title: "Kombinatorika", detail: "Aturan hitung, permutasi & kombinasi" },
+          { title: "Teori Graf", detail: "Simpul, sisi & pemodelan jaringan" },
+        ],
+      },
+    };
+  }
+
+  if (qLower.includes("logika") || qLower.includes("proposisi") || qLower.includes("implikasi")) {
+    const displayTitle = cleanTitle || "Logika Matematika";
+    return {
+      ...base,
+      title: displayTitle,
       snippet:
         "Mempelajari pernyataan (proposisi), operator logika (¬, ∧, ∨, →, ↔), tabel kebenaran, dan ekuivalensi logika.",
       chapterCount: 3,
@@ -61,11 +150,6 @@ function buildTopicSpecificNote(rawQuery: string, source?: string): StudyNote {
           front: "Apa bentuk kontraposisi dari 'Jika hujan (p), maka jalan basah (q)'?",
           back: "Jika jalan tidak basah (¬q), maka tidak hujan (¬p).",
         },
-        {
-          id: `${base.id}-fc-3`,
-          front: "Berapa banyak baris tabel kebenaran untuk 3 proposisi berbeda?",
-          back: "2³ = 8 baris kombinasi nilai kebenaran.",
-        },
       ],
       quiz: [
         {
@@ -74,15 +158,9 @@ function buildTopicSpecificNote(rawQuery: string, source?: string): StudyNote {
           correctIndex: 1,
           explanation: "Implikasi p → q bernilai Salah tepat ketika p Benar dan q Salah.",
         },
-        {
-          question: "Pernyataan yang ekuivalen dengan ¬(p ∧ q) menurut Hukum De Morgan adalah...",
-          options: ["¬p ∧ ¬q", "¬p ∨ ¬q", "p ∨ ¬q", "¬p → q"],
-          correctIndex: 1,
-          explanation: "Hukum De Morgan menyatakan negasi konjungsi sama dengan disjungsi dari negasi masing-masing.",
-        },
       ],
       mindmapRoot: {
-        label: "Logika Matematika",
+        label: displayTitle.slice(0, 46),
         branches: [
           { title: "Operator Dasar", detail: "Negasi (¬), Konjungsi (∧), Disjungsi (∨)" },
           { title: "Bersyarat", detail: "Implikasi (→), Kontraposisi, Biimplikasi (↔)" },
@@ -92,7 +170,10 @@ function buildTopicSpecificNote(rawQuery: string, source?: string): StudyNote {
     };
   }
 
-  return base;
+  return {
+    ...base,
+    title: cleanTitle || base.title,
+  };
 }
 
 export async function POST(req: Request) {
