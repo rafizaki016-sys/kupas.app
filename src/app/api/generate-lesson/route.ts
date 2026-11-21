@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  buildComprehensiveNoteFromSource,
   cleanTopicFromInput,
   generateStudyNoteFromInput,
   type StudyNote,
@@ -11,9 +12,17 @@ type GenerateBody = {
   source?: string;
 };
 
-function buildTopicSpecificNote(rawQuery: string, source?: string): StudyNote {
-  const cleanTitle = cleanTopicFromInput(rawQuery);
-  const base = generateStudyNoteFromInput({ source, query: cleanTitle || rawQuery });
+function buildTopicSpecificNote(
+  rawQuery: string,
+  source?: string,
+  customTitle?: string,
+): StudyNote {
+  const cleanTitle = cleanTopicFromInput(customTitle || rawQuery);
+  const base = buildComprehensiveNoteFromSource({
+    source,
+    query: rawQuery,
+    title: cleanTitle,
+  });
   const qLower = `${rawQuery} ${cleanTitle}`.toLowerCase();
 
   if (
@@ -23,9 +32,12 @@ function buildTopicSpecificNote(rawQuery: string, source?: string): StudyNote {
     qLower.includes("kombinatorika")
   ) {
     const displayTitle = cleanTitle || "Matematika Diskrit";
+    const fallback = generateStudyNoteFromInput({ source, query: displayTitle });
     return {
-      ...base,
+      ...fallback,
+      id: base.id,
       title: displayTitle,
+      sourceInput: rawQuery,
       snippet:
         "Mempelajari struktur objek diskrit (terpisah/terhitung) seperti himpunan, logika, relasi & fungsi, kombinatorika, serta teori graf.",
       chapterCount: 3,
@@ -37,6 +49,7 @@ function buildTopicSpecificNote(rawQuery: string, source?: string): StudyNote {
           points: [
             "Operasi dasar himpunan: gabungan (A ∪ B), irisan (A ∩ B), selisih (A − B), dan komplemen.",
             "Fungsi memetakan setiap elemen domain tepat ke satu elemen kodomain.",
+            "Relasi biner menghubungkan anggota himpunan A ke himpunan B berdasarkan aturan tertentu.",
           ],
         },
         {
@@ -46,6 +59,7 @@ function buildTopicSpecificNote(rawQuery: string, source?: string): StudyNote {
           points: [
             "Aturan perkalian dipakai untuk kejadian berurutan/bersamaan; aturan penjumlahan untuk pilihan saling lepas.",
             "Permutasi memperhatikan urutan (P(n,r)), sedangkan kombinasi tidak memperhatikan urutan (C(n,r)).",
+            "Prinsip sangkar burung (Pigeonhole Principle) membantu membuktikan keberadaan minimal satu kelompok berisi ≥ k elemen.",
           ],
         },
         {
@@ -54,7 +68,8 @@ function buildTopicSpecificNote(rawQuery: string, source?: string): StudyNote {
             "Graf terdiri atas simpul (vertex) dan sisi (edge) untuk memodelkan jaringan, rute, dan ketergantungan.",
           points: [
             "Jumlah derajat seluruh simpul pada graf sama dengan dua kali jumlah sisinya.",
-            "Diterapkan pada jaringan komputer, penjadwalan, dan pencarian jalur terpendek.",
+            "Graf berarah membedakan arah sisi (in-degree dan out-degree), sedangkan graf tak-berarah bersifat dua arah.",
+            "Diterapkan pada jaringan komputer, penjadwalan tugas, dan pencarian jalur terpendek.",
           ],
         },
       ],
@@ -75,7 +90,8 @@ function buildTopicSpecificNote(rawQuery: string, source?: string): StudyNote {
           question: "Jika sebuah graf memiliki 5 sisi, berapakah jumlah derajat seluruh simpulnya?",
           options: ["5", "10", "15", "20"],
           correctIndex: 1,
-          explanation: "Menurut teorema jabat tangan (handshaking lemma), jumlah derajat semua simpul = 2 × jumlah sisi = 2 × 5 = 10.",
+          explanation:
+            "Menurut teorema jabat tangan (handshaking lemma), jumlah derajat semua simpul = 2 × jumlah sisi = 2 × 5 = 10.",
         },
         {
           question: "Kapan aturan perkalian digunakan dalam kombinatorika?",
@@ -86,7 +102,8 @@ function buildTopicSpecificNote(rawQuery: string, source?: string): StudyNote {
             "Saat menghitung komplemen himpunan",
           ],
           correctIndex: 1,
-          explanation: "Aturan perkalian mengalikan banyaknya cara pada setiap tahap yang dilakukan bersama/berurutan.",
+          explanation:
+            "Aturan perkalian mengalikan banyaknya cara pada setiap tahap yang dilakukan bersama/berurutan.",
         },
       ],
       mindmapRoot: {
@@ -102,9 +119,12 @@ function buildTopicSpecificNote(rawQuery: string, source?: string): StudyNote {
 
   if (qLower.includes("logika") || qLower.includes("proposisi") || qLower.includes("implikasi")) {
     const displayTitle = cleanTitle || "Logika Matematika";
+    const fallback = generateStudyNoteFromInput({ source, query: displayTitle });
     return {
-      ...base,
+      ...fallback,
+      id: base.id,
       title: displayTitle,
+      sourceInput: rawQuery,
       snippet:
         "Mempelajari pernyataan (proposisi), operator logika (¬, ∧, ∨, →, ↔), tabel kebenaran, dan ekuivalensi logika.",
       chapterCount: 3,
@@ -170,10 +190,7 @@ function buildTopicSpecificNote(rawQuery: string, source?: string): StudyNote {
     };
   }
 
-  return {
-    ...base,
-    title: cleanTitle || base.title,
-  };
+  return base;
 }
 
 export async function POST(req: Request) {
@@ -188,7 +205,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const note = buildTopicSpecificNote(rawQuery, body.source);
+    const note = buildTopicSpecificNote(rawQuery, body.source, body.title);
     return NextResponse.json({ note }, { status: 200 });
   } catch {
     return NextResponse.json(
