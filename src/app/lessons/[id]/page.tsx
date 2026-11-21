@@ -15,7 +15,9 @@ import {
   HelpCircle,
   History,
   Layers,
+  Maximize2,
   MessageSquare,
+  Minus,
   Plus,
   RotateCcw,
   Send,
@@ -98,6 +100,10 @@ export default function LessonDetailPage() {
   const [exportStatus, setExportStatus] = useState<string>("");
   const [editableChapters, setEditableChapters] = useState(note.chapters);
 
+  // Radial Mindmap state
+  const [mapZoom, setMapZoom] = useState<number>(100);
+  const [activeBranchIdx, setActiveBranchIdx] = useState<number>(0);
+
   // Ask / Tanya materi state
   const [question, setQuestion] = useState<string>("");
   const [messages, setMessages] = useState<ChatMsg[]>([
@@ -122,6 +128,8 @@ export default function LessonDetailPage() {
     setFlipped(false);
     setQuizIdx(0);
     setChosenOption(null);
+    setActiveBranchIdx(0);
+    setMapZoom(100);
   }, [id]);
 
   useEffect(() => {
@@ -137,6 +145,30 @@ export default function LessonDetailPage() {
     note.chapters[Math.min(note.chaptersDone, note.chapters.length - 1)] ?? currentChapter;
   const currentCard = note.flashcards[cardIdx] ?? note.flashcards[0];
   const currentQuiz = note.quiz[quizIdx] ?? note.quiz[0];
+
+  const radialBranches = useMemo(() => {
+    const baseBranches = note.mindmapRoot.branches || [];
+    const chapterBranches = note.chapters.map((ch) => ({
+      title: ch.title.replace(/^Bab\s*\d+\s*·\s*/i, ""),
+      detail: ch.summary,
+    }));
+
+    const combined = [...baseBranches, ...chapterBranches];
+    const unique: { title: string; detail: string }[] = [];
+    const seen = new Set<string>();
+
+    for (const b of combined) {
+      const key = b.title.trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      unique.push(b);
+      if (unique.length >= 8) break;
+    }
+
+    return unique.length > 0
+      ? unique
+      : [{ title: "Konsep Utama", detail: note.snippet }];
+  }, [note.mindmapRoot.branches, note.chapters, note.snippet]);
 
   const chapterSteps: StepCard[] = useMemo(() => {
     if (!currentChapter) return [];
@@ -378,7 +410,6 @@ export default function LessonDetailPage() {
 
     return (
       <div className="flex min-h-screen flex-col bg-[#faf6ee] text-[#1d2433]">
-        {/* Chapter Runner Top Header */}
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b-[1.5px] border-[#1d2433] bg-[#fffdf8] px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-3.5">
             <button
@@ -409,9 +440,7 @@ export default function LessonDetailPage() {
           </span>
         </header>
 
-        {/* Main Split: Left Steps Rail + Right Step Content */}
         <div className="mx-auto flex w-full max-w-[1320px] flex-1 flex-col md:flex-row">
-          {/* Left Steps List ("LANGKAH DI BAB INI") */}
           <aside
             aria-label="Langkah di bab ini"
             className="w-full shrink-0 border-b-[1.5px] border-[#1d2433] bg-[#fffdf8] px-4 py-4 md:w-[270px] md:border-b-0 md:border-r-[1.5px] md:py-6"
@@ -457,7 +486,6 @@ export default function LessonDetailPage() {
             </ol>
           </aside>
 
-          {/* Right Step Content Area */}
           <main className="flex flex-1 flex-col justify-between px-4 py-6 sm:px-8 lg:px-12">
             <div className="mx-auto w-full max-w-[720px] space-y-5">
               {chapterFinished ? (
@@ -644,7 +672,6 @@ export default function LessonDetailPage() {
           </main>
         </div>
 
-        {/* Bottom Action Bar ("← Kembali | X DARI Y | Lanjut ↵") */}
         <footer className="sticky bottom-0 z-20 flex h-16 items-center justify-between border-t-[1.5px] border-[#1d2433] bg-[#fffdf8] px-4 sm:px-8">
           <button
             type="button"
@@ -709,6 +736,12 @@ export default function LessonDetailPage() {
                 <span className="font-semibold text-[#1d2433]">Catatan</span>
               </>
             )}
+            {activeTab === "peta" && (
+              <>
+                <span className="text-[#8d95a5]">›</span>
+                <span className="font-semibold text-[#1d2433]">Peta</span>
+              </>
+            )}
           </nav>
         </div>
 
@@ -758,7 +791,11 @@ export default function LessonDetailPage() {
         </aside>
 
         {/* Main Content Area */}
-        <main className="min-w-0 flex-1 px-4 py-7 sm:px-8 lg:px-10">
+        <main
+          className={`min-w-0 flex-1 ${
+            activeTab === "peta" ? "p-0" : "px-4 py-7 sm:px-8 lg:px-10"
+          }`}
+        >
           {activeTab === "belajar" && !inChapterRunner && (
             <div className="mx-auto max-w-[820px] space-y-6">
               <div className="space-y-3">
@@ -1170,28 +1207,138 @@ export default function LessonDetailPage() {
             </div>
           )}
 
+          {/* Tab Peta: Radial Mindmap (Opsi 2 · Akar di tengah) */}
           {activeTab === "peta" && (
-            <div className="mx-auto max-w-[820px] space-y-4 rounded-2xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] p-6 shadow-[5px_5px_0_#1d2433]">
-              <h1 className="text-2xl font-extrabold text-[#1d2433]">Peta Konsep</h1>
-              <div className="rounded-xl border-[1.5px] border-[#1d2433] bg-[#dfe8ff] p-4">
-                <span className="text-[11px] font-extrabold uppercase text-[#1e4fd8]">
-                  Topik Utama
-                </span>
-                <p className="mt-1 text-base font-extrabold text-[#1d2433]">
-                  {note.mindmapRoot.label}
-                </p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {note.mindmapRoot.branches.map((br) => (
-                  <div
-                    key={br.title}
-                    className="rounded-xl border-[1.5px] border-[#1d2433] bg-[#faf6ee] p-4"
+            <div
+              className="relative min-h-[calc(100vh-3.5rem)] w-full overflow-hidden"
+              style={{
+                backgroundColor: "#faf6ee",
+                backgroundImage: "radial-gradient(#d5cdc0 1.25px, transparent 1.25px)",
+                backgroundSize: "18px 18px",
+              }}
+            >
+              {/* Zoom Controls + Percentage Pill */}
+              <div className="absolute left-4 top-4 z-10 flex items-center gap-2.5 sm:left-6 sm:top-6">
+                <div className="flex flex-col overflow-hidden rounded-2xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] shadow-[3px_3px_0_#1d2433]">
+                  <button
+                    type="button"
+                    aria-label="Reset zoom peta"
+                    onClick={() => setMapZoom(100)}
+                    className="grid h-9 w-9 place-items-center border-b border-[#e5ddd0] text-[#1d2433] hover:bg-[#dfe8ff]"
                   >
-                    <h2 className="text-sm font-extrabold text-[#1d2433]">{br.title}</h2>
-                    <p className="mt-1 text-xs text-[#5d6578]">{br.detail}</p>
-                  </div>
-                ))}
+                    <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Perbesar peta"
+                    onClick={() => setMapZoom((z) => Math.min(130, z + 10))}
+                    className="grid h-9 w-9 place-items-center border-b border-[#e5ddd0] text-[#1d2433] hover:bg-[#dfe8ff]"
+                  >
+                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Perkecil peta"
+                    onClick={() => setMapZoom((z) => Math.max(65, z - 10))}
+                    className="grid h-9 w-9 place-items-center text-[#1d2433] hover:bg-[#dfe8ff]"
+                  >
+                    <Minus className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+
+                <span className="rounded-full border-[1.5px] border-[#1d2433] bg-[#fffdf8] px-3 py-1 text-xs font-extrabold text-[#1d2433] shadow-[2px_2px_0_#1d2433]">
+                  {mapZoom}%
+                </span>
               </div>
+
+              {/* Radial Canvas */}
+              <div className="flex min-h-[560px] w-full items-center justify-center overflow-x-auto px-4 py-14">
+                <div
+                  className="relative h-[500px] w-[760px] shrink-0 transition-transform duration-200"
+                  style={{ transform: `scale(${mapZoom / 100})` }}
+                >
+                  {/* Curved Connector Lines */}
+                  <svg
+                    viewBox="0 0 760 500"
+                    className="pointer-events-none absolute inset-0 h-full w-full"
+                    aria-hidden="true"
+                  >
+                    {radialBranches.map((br, idx) => {
+                      const angleDeg = -90 + (360 / radialBranches.length) * idx;
+                      const rad = (angleDeg * Math.PI) / 180;
+                      const endX = 380 + Math.cos(rad) * 235;
+                      const endY = 250 + Math.sin(rad) * 168;
+                      const ctrlX = 380 + Math.cos(rad - 0.14) * 135;
+                      const ctrlY = 250 + Math.sin(rad - 0.14) * 95;
+                      const isActive = activeBranchIdx === idx;
+
+                      return (
+                        <path
+                          key={`${br.title}-${idx}`}
+                          d={`M 380 250 Q ${ctrlX} ${ctrlY} ${endX} ${endY}`}
+                          fill="none"
+                          stroke={isActive ? "#1e4fd8" : "#8e96a6"}
+                          strokeWidth={isActive ? 2.2 : 1.5}
+                        />
+                      );
+                    })}
+                  </svg>
+
+                  {/* Center Root Node */}
+                  <button
+                    type="button"
+                    onClick={() => setActiveBranchIdx(0)}
+                    className="absolute left-1/2 top-1/2 z-10 w-[196px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border-[1.5px] border-[#1d2433] bg-[#162238] px-4 py-3 text-center text-xs font-extrabold leading-snug text-white shadow-[4px_4px_0_#1d2433]"
+                  >
+                    {note.title}
+                  </button>
+
+                  {/* Radial Branch Nodes */}
+                  {radialBranches.map((br, idx) => {
+                    const angleDeg = -90 + (360 / radialBranches.length) * idx;
+                    const rad = (angleDeg * Math.PI) / 180;
+                    const x = 380 + Math.cos(rad) * 245;
+                    const y = 250 + Math.sin(rad) * 172;
+                    const isTopHighlight = idx === 0;
+                    const isSelected = activeBranchIdx === idx;
+
+                    return (
+                      <button
+                        key={`${br.title}-node-${idx}`}
+                        type="button"
+                        onClick={() => setActiveBranchIdx(idx)}
+                        style={{ left: `${x}px`, top: `${y}px` }}
+                        className={`z-10 max-w-[172px] -translate-x-1/2 -translate-y-1/2 rounded-xl border-[1.5px] border-[#1d2433] px-3.5 py-2 text-center text-xs font-bold leading-snug shadow-[3px_3px_0_#1d2433] transition hover:-translate-y-[calc(50%+2px)] ${
+                          isTopHighlight
+                            ? "bg-[#1e4fd8] text-white"
+                            : isSelected
+                              ? "bg-[#dfe8ff] text-[#1d2433]"
+                              : "bg-white text-[#1d2433]"
+                        }`}
+                      >
+                        <span className="block truncate">{br.title}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Selected Branch Detail Card */}
+              {radialBranches[activeBranchIdx] && (
+                <div className="mx-auto mb-6 max-w-[640px] px-4">
+                  <div className="rounded-2xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] p-4 shadow-[4px_4px_0_#1d2433]">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#1e4fd8]">
+                      CABANG TERPILIH
+                    </span>
+                    <h2 className="mt-1 text-sm font-extrabold text-[#1d2433]">
+                      {radialBranches[activeBranchIdx].title}
+                    </h2>
+                    <p className="mt-1 text-xs leading-relaxed text-[#5d6578]">
+                      {radialBranches[activeBranchIdx].detail}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
