@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import type { Note, NoteKind } from "../data";
+import type { NoteKind, StudyNote as Note } from "@/lib/kupas-store";
 import { readStoredNotes } from "@/lib/kupas-store";
 import { IconDoc, IconMic, IconNote, IconPlay, IconSlide } from "./icons";
 import styles from "../dashboard.module.css";
