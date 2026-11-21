@@ -1218,7 +1218,7 @@ export default function LessonDetailPage() {
               }}
             >
               {/* Zoom Controls + Percentage Pill */}
-              <div className="absolute left-4 top-4 z-10 flex items-center gap-2.5 sm:left-6 sm:top-6">
+              <div className="absolute left-4 top-4 z-20 flex items-center gap-2.5 sm:left-6 sm:top-6">
                 <div className="flex flex-col overflow-hidden rounded-2xl border-[1.5px] border-[#1d2433] bg-[#fffdf8] shadow-[3px_3px_0_#1d2433]">
                   <button
                     type="button"
@@ -1231,7 +1231,7 @@ export default function LessonDetailPage() {
                   <button
                     type="button"
                     aria-label="Perbesar peta"
-                    onClick={() => setMapZoom((z) => Math.min(130, z + 10))}
+                    onClick={() => setMapZoom((z) => Math.min(125, z + 10))}
                     className="grid h-9 w-9 place-items-center border-b border-[#e5ddd0] text-[#1d2433] hover:bg-[#dfe8ff]"
                   >
                     <Plus className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1239,7 +1239,7 @@ export default function LessonDetailPage() {
                   <button
                     type="button"
                     aria-label="Perkecil peta"
-                    onClick={() => setMapZoom((z) => Math.max(65, z - 10))}
+                    onClick={() => setMapZoom((z) => Math.max(70, z - 10))}
                     className="grid h-9 w-9 place-items-center text-[#1d2433] hover:bg-[#dfe8ff]"
                   >
                     <Minus className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1252,30 +1252,30 @@ export default function LessonDetailPage() {
               </div>
 
               {/* Radial Canvas */}
-              <div className="flex min-h-[560px] w-full items-center justify-center overflow-x-auto px-4 py-14">
+              <div className="flex min-h-[580px] w-full items-center justify-center overflow-x-auto px-4 py-12">
                 <div
-                  className="relative h-[500px] w-[760px] shrink-0 transition-transform duration-200"
+                  className="relative h-[520px] w-[820px] shrink-0 transition-transform duration-200"
                   style={{ transform: `scale(${mapZoom / 100})` }}
                 >
                   {/* Curved Connector Lines */}
                   <svg
-                    viewBox="0 0 760 500"
+                    viewBox="0 0 820 520"
                     className="pointer-events-none absolute inset-0 h-full w-full"
                     aria-hidden="true"
                   >
                     {radialBranches.map((br, idx) => {
                       const angleDeg = -90 + (360 / radialBranches.length) * idx;
                       const rad = (angleDeg * Math.PI) / 180;
-                      const endX = 380 + Math.cos(rad) * 235;
-                      const endY = 250 + Math.sin(rad) * 168;
-                      const ctrlX = 380 + Math.cos(rad - 0.14) * 135;
-                      const ctrlY = 250 + Math.sin(rad - 0.14) * 95;
+                      const endX = 410 + Math.cos(rad) * 265;
+                      const endY = 260 + Math.sin(rad) * 185;
+                      const ctrlX = 410 + Math.cos(rad - 0.14) * 150;
+                      const ctrlY = 260 + Math.sin(rad - 0.14) * 105;
                       const isActive = activeBranchIdx === idx;
 
                       return (
                         <path
-                          key={`${br.title}-${idx}`}
-                          d={`M 380 250 Q ${ctrlX} ${ctrlY} ${endX} ${endY}`}
+                          key={`${br.title}-line-${idx}`}
+                          d={`M 410 260 Q ${ctrlX} ${ctrlY} ${endX} ${endY}`}
                           fill="none"
                           stroke={isActive ? "#1e4fd8" : "#8e96a6"}
                           strokeWidth={isActive ? 2.2 : 1.5}
@@ -1288,7 +1288,8 @@ export default function LessonDetailPage() {
                   <button
                     type="button"
                     onClick={() => setActiveBranchIdx(0)}
-                    className="absolute left-1/2 top-1/2 z-10 w-[196px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border-[1.5px] border-[#1d2433] bg-[#162238] px-4 py-3 text-center text-xs font-extrabold leading-snug text-white shadow-[4px_4px_0_#1d2433]"
+                    style={{ left: "410px", top: "260px" }}
+                    className="absolute z-10 w-[205px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border-[1.5px] border-[#1d2433] bg-[#162238] px-4 py-3 text-center text-xs font-extrabold leading-snug text-white shadow-[4px_4px_0_#1d2433]"
                   >
                     {note.title}
                   </button>
@@ -1297,8 +1298,8 @@ export default function LessonDetailPage() {
                   {radialBranches.map((br, idx) => {
                     const angleDeg = -90 + (360 / radialBranches.length) * idx;
                     const rad = (angleDeg * Math.PI) / 180;
-                    const x = 380 + Math.cos(rad) * 245;
-                    const y = 250 + Math.sin(rad) * 172;
+                    const x = 410 + Math.cos(rad) * 265;
+                    const y = 260 + Math.sin(rad) * 185;
                     const isTopHighlight = idx === 0;
                     const isSelected = activeBranchIdx === idx;
 
@@ -1308,7 +1309,7 @@ export default function LessonDetailPage() {
                         type="button"
                         onClick={() => setActiveBranchIdx(idx)}
                         style={{ left: `${x}px`, top: `${y}px` }}
-                        className={`z-10 max-w-[172px] -translate-x-1/2 -translate-y-1/2 rounded-xl border-[1.5px] border-[#1d2433] px-3.5 py-2 text-center text-xs font-bold leading-snug shadow-[3px_3px_0_#1d2433] transition hover:-translate-y-[calc(50%+2px)] ${
+                        className={`absolute z-10 max-w-[185px] -translate-x-1/2 -translate-y-1/2 rounded-xl border-[1.5px] border-[#1d2433] px-3.5 py-2 text-center text-xs font-bold leading-snug shadow-[3px_3px_0_#1d2433] transition hover:-translate-y-[calc(50%+2px)] ${
                           isTopHighlight
                             ? "bg-[#1e4fd8] text-white"
                             : isSelected
@@ -1316,7 +1317,7 @@ export default function LessonDetailPage() {
                               : "bg-white text-[#1d2433]"
                         }`}
                       >
-                        <span className="block truncate">{br.title}</span>
+                        <span className="line-clamp-2">{br.title}</span>
                       </button>
                     );
                   })}
