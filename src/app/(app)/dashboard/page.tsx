@@ -286,15 +286,15 @@ export default function DashboardPage() {
       <header className="sticky top-0 z-30 border-b border-[#E5DEC9] bg-[#FAF7F2]/95 backdrop-blur-sm">
         <div className="mx-auto flex h-16 max-w-[1040px] items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
-            <button
+          <button
               type="button"
               onClick={() => setDrawerOpen((v) => !v)}
               aria-label="Buka menu navigasi"
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#DCD4C0] bg-
-            >
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#DCD4C0] bg-white text-[#14181F] transition hover:bg-[#F3EFE4]"
+          >
               {drawerOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
             </button>
-
+            
             <Link href="/dashboard" className="flex items-center gap-2 text-sm font-bold text-[#14181F]">
               <span className="flex h-7 w-7 items-center justify-center rounded-md border border-[#14181F] bg-white text-[#14181F]">
                 <BookOpen className="h-4 w-4" aria-hidden="true" />
