@@ -44,20 +44,13 @@ export function NotesBrowser({ notes }: { notes: Note[] }) {
   const [mergedNotes, setMergedNotes] = useState<Note[]>(notes);
   const [filter, setFilter] = useState<"all" | NoteKind>("all");
 
-  useEffect(() => {
+ useEffect(() => {
     const stored = readStoredNotes();
     if (stored.length > 0) {
-      const mapped: Note[] = stored.map((s) => ({
-        id: s.id,
-        title: s.title,
-        kind: s.kind,
-        snippet: s.snippet,
-        createdAt: s.createdAt,
-        chapterCount: s.chapterCount,
-        chaptersDone: s.chaptersDone,
-      }));
-      setMergedNotes(mapped);
+      setMergedNotes(stored);
     }
+  }, [notes]);
+  }, [notes]);
   }, [notes]);
 
   const shown = useMemo(
