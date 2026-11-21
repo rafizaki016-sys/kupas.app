@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, FileText, Headphones, Link2, Sparkles } from "lucide-react";
 import {
+  buildComprehensiveNoteFromSource,
   cleanTopicFromInput,
-  generateStudyNoteFromInput,
   upsertStudyNote,
   type NoteKind,
   type StudyNote,
@@ -81,9 +81,10 @@ function NewLessonContent() {
       // fallback lokal jika endpoint tidak tersedia
     }
 
-    const fallbackNote = generateStudyNoteFromInput({
+    const fallbackNote = buildComprehensiveNoteFromSource({
       source: rawSource,
-      query: cleanTitle || textValue,
+      query: textValue,
+      title: cleanTitle || textValue,
     });
     upsertStudyNote({
       ...fallbackNote,
@@ -119,12 +120,12 @@ function NewLessonContent() {
   const kindMeta: Record<NoteKind, { label: string; hint: string; placeholder: string }> = {
     pdf: {
       label: "Unggah",
-      hint: "Pilih berkas (PDF, Word, Slide, Excel, Teks, Gambar, Audio, Video) atau tulis topik/materi.",
+      hint: "Pilih berkas (PDF, Word, Slide, Excel, Teks, Gambar, Audio, Video) atau tulis topik/materi lengkap.",
       placeholder: "Contoh: Matematika Diskrit — himpunan, relasi, dan graf",
     },
     audio: {
       label: "Rekam",
-      hint: "Masukkan topik atau ringkasan singkat dari rekaman kelas/suara.",
+      hint: "Masukkan topik atau transkrip/ringkasan rekaman kelas agar diuraikan menjadi bab dan latihan.",
       placeholder: "Contoh: Ringkasan rekaman kuliah struktur data",
     },
     youtube: {
@@ -167,7 +168,7 @@ function NewLessonContent() {
             <Sparkles className="h-5 w-5 animate-pulse" aria-hidden="true" />
           </div>
           <h1 className="mt-4 text-xl font-extrabold text-[#1d2433]">
-            Menyusun bab, catatan, kuis, dan flashcard...
+            Mengurai materi menjadi bab, catatan, kuis, dan flashcard...
           </h1>
           <p className="mt-1.5 text-sm text-[#5d6578]">
             Topik: <strong className="text-[#1d2433]">{cleanedInitialQuery || title}</strong>
@@ -222,12 +223,29 @@ function NewLessonContent() {
               <input
                 id="file-upload"
                 type="file"
-                accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,image/*,audio/*,video/*"
-                onChange={(e) => {
+                accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.csv,.json,image/*,audio/*,video/*"
+                onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
                   const cleanName = cleanTopicFromInput(file.name.replace(/\.[^/.]+$/, ""));
                   setTitle(cleanName);
+
+                  const isTextLike =
+                    /\.(txt|md|markdown|csv|json|log|ts|tsx|js|jsx|py|html|xml)$/i.test(file.name) ||
+                    file.type.startsWith("text/");
+
+                  if (isTextLike) {
+                    try {
+                      const textBody = await file.text();
+                      if (textBody.trim()) {
+                        setContent(textBody.slice(0, 8000));
+                        return;
+                      }
+                    } catch {
+                      // fallback ke nama topik
+                    }
+                  }
+
                   setContent((prev) => prev || cleanName);
                 }}
                 className="mt-2 block w-full text-xs text-[#5d6578]"
@@ -251,11 +269,13 @@ function NewLessonContent() {
 
           <div>
             <label htmlFor="lesson-content" className="block text-xs font-bold uppercase text-[#1d2433]">
-              {source === "link" ? "Tautan YouTube / Artikel atau Topik" : "Isi Materi / Catatan Singkat"}
+              {source === "link"
+                ? "Tautan YouTube / Artikel atau Topik"
+                : "Isi Materi / Catatan / Transkrip Singkat"}
             </label>
             <textarea
               id="lesson-content"
-              rows={4}
+              rows={5}
               value={content}
               onChange={(e) => {
                 const val = e.target.value;
@@ -267,7 +287,7 @@ function NewLessonContent() {
               placeholder={
                 source === "link"
                   ? "Tempel tautan YouTube atau artikel web di sini..."
-                  : "Tempel catatan, ringkasan bab, atau topik di sini..."
+                  : "Tempel catatan, ringkasan bab, isi dokumen, atau topik di sini..."
               }
               className="mt-1.5 w-full rounded-xl border-[1.5px] border-[#1d2433] bg-white p-4 text-sm text-[#1d2433] focus:outline-none focus:ring-2 focus:ring-[#1e4fd8]"
             />
