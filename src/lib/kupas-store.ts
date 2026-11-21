@@ -13,10 +13,47 @@ export type QuizItem = {
   explanation: string;
 };
 
+export type ConceptItem = {
+  concept: string;
+  explanation: string;
+  analogy: string;
+  misconception: string;
+  correction: string;
+};
+
+export type ExampleItem = {
+  caseTitle: string;
+  givenData: string;
+  steps: string[];
+  finalResult: string;
+};
+
 export type ChapterItem = {
   title: string;
+  /** Ringkas, untuk daftar bab. Bukan isi pelajaran. */
   summary: string;
+  /** Daftar ringkas. Tetap ada agar catatan lama tetap tampil. */
   points: string[];
+  // Isi lengkap. Bab dari catatan lama atau cadangan tidak punya kolom ini.
+  intro?: string;
+  objectives?: string[];
+  concepts?: ConceptItem[];
+  examples?: ExampleItem[];
+  mistakes?: string[];
+  checks?: QuizItem[];
+  recap?: string[];
+  /** false = bab ini diganti templat karena Gemini gagal. Tawarkan "Buat ulang bab ini". */
+  generated?: boolean;
+};
+
+export type GenerationMeta = {
+  generator: "gemini" | "fallback";
+  /** Nomor bab (mulai 1) yang gagal dibuat dan diganti templat. */
+  failedChapters: number[];
+  /** Nomor bab yang jadi, tetapi masih kurang dari syarat panjang atau jumlah. */
+  weakChapters?: number[];
+  /** Alasan memakai catatan cadangan. */
+  reason?: string;
 };
 
 export type StudyNote = {
@@ -35,6 +72,7 @@ export type StudyNote = {
     label: string;
     branches: { title: string; detail: string }[];
   };
+  meta?: GenerationMeta;
 };
 
 const STORAGE_KEY = "kupas_study_notes_v1";
@@ -59,6 +97,115 @@ export const DEFAULT_NOTES: StudyNote[] = [
           "Jika diam akan tetap diam (∑F = 0, v = 0).",
           "Jika bergerak lurus beraturan akan terus bergerak dengan kecepatan tetap (∑F = 0, a = 0).",
           "Contoh: penumpang terdorong ke depan saat bus direm mendadak.",
+        ],
+        generated: true,
+        intro:
+          "Pernahkah kamu terdorong ke depan saat bus direm mendadak? Tubuhmu tidak sengaja bergerak maju. Tubuhmu hanya melanjutkan gerak yang tadi sudah berlangsung, sementara bus melambat.\n\nHukum I Newton menjelaskan kecenderungan ini. Benda tidak mengubah keadaan geraknya sendiri: yang diam tetap diam, dan yang bergerak lurus dengan kecepatan tetap terus begitu, selama tidak ada gaya total yang memaksanya berubah. Di bab ini kamu akan mengenali sifat itu, membaca syaratnya, lalu memakainya pada soal.",
+        objectives: [
+          "Menjelaskan arti kelembaman dengan contoh sehari-hari",
+          "Memakai syarat ΣF = 0 untuk menentukan keadaan gerak benda",
+        ],
+        concepts: [
+          {
+            concept: "Kelembaman (inersia)",
+            explanation:
+              "Kelembaman adalah kecenderungan benda untuk mempertahankan keadaan geraknya. Benda yang diam sulit digerakkan, dan benda yang sedang bergerak sulit dihentikan atau dibelokkan. Besarnya kelembaman ditentukan oleh massa: makin besar massa, makin besar kelembamannya. Itu sebabnya truk bermuatan jauh lebih sulit dihentikan daripada sepeda motor yang melaju secepat itu, dan koper berat lebih sulit digeser daripada tas kosong. Kelembaman bukan gaya. Ia adalah sifat benda, jadi tidak pernah muncul sebagai panah gaya pada diagram benda bebas.",
+            analogy:
+              "Bayangkan bola bowling dan bola tenis meja di lantai licin. Mendorong bola bowling jauh lebih berat, dan menghentikannya saat menggelinding juga jauh lebih berat, karena massa dan kelembamannya jauh lebih besar.",
+            misconception: "Kelembaman adalah gaya yang melawan gerak benda.",
+            correction:
+              "Kelembaman adalah sifat benda, bukan gaya. Benda berubah geraknya hanya jika ada gaya total yang bekerja padanya.",
+          },
+          {
+            concept: "Syarat keseimbangan gerak (ΣF = 0)",
+            explanation:
+              "Hukum I Newton berlaku jika resultan gaya, yaitu jumlah semua gaya yang bekerja pada benda dengan memperhatikan arahnya, sama dengan nol. Dalam keadaan itu percepatan benda nol: benda yang diam tetap diam (v = 0), dan benda yang bergerak terus melaju lurus dengan kecepatan tetap. Gaya yang bekerja boleh banyak. Yang dihitung adalah hasil akhirnya setelah semua gaya dijumlahkan. Buku di atas meja punya berat ke bawah dan gaya normal ke atas, keduanya sama besar sehingga resultannya nol dan buku tetap diam.",
+            analogy:
+              "Dua orang menarik tali ke arah berlawanan dengan kekuatan sama: tali tidak bergerak karena tarikan keduanya saling menghapus.",
+            misconception: "Jika benda bergerak, pasti ada gaya total yang mendorongnya terus.",
+            correction:
+              "Benda yang bergerak lurus dengan kecepatan tetap tidak memerlukan gaya total. Gaya total hanya diperlukan untuk mengubah kecepatannya. Di dunia nyata gaya gesek yang membuat benda berhenti.",
+          },
+        ],
+        examples: [
+          {
+            caseTitle: "Penumpang saat bus direm",
+            givenData: "Bus melaju 60 km/jam lalu direm mendadak. Penumpang duduk tanpa sabuk pengaman.",
+            steps: [
+              "Sebelum direm, bus dan penumpang bergerak dengan kecepatan yang sama.",
+              "Rem bekerja pada bus, jadi bus melambat.",
+              "Tidak ada gaya ke belakang yang cukup pada penumpang, sehingga tubuhnya cenderung melanjutkan gerak ke depan.",
+              "Sabuk pengaman memberi gaya ke belakang yang mengurangi kecepatan penumpang bersama bus.",
+            ],
+            finalResult:
+              "Penumpang terdorong ke depan karena kelembaman, bukan karena ada gaya yang mendorongnya.",
+          },
+          {
+            caseTitle: "Peti didorong dengan kecepatan tetap",
+            givenData:
+              "Peti 50 kg didorong mendatar dengan gaya 120 N dan bergerak dengan kecepatan tetap.",
+            steps: [
+              "Kecepatan tetap berarti percepatan nol, jadi ΣF = 0.",
+              "Pada arah mendatar ada dua gaya: dorongan 120 N dan gaya gesek.",
+              "Karena ΣF = 0, besar gaya gesek harus sama dengan dorongan.",
+              "Gaya berat dan gaya normal di arah tegak juga saling meniadakan.",
+            ],
+            finalResult: "Gaya gesek sebesar 120 N dan berlawanan arah dengan dorongan.",
+          },
+        ],
+        mistakes: [
+          "Menganggap benda yang bergerak selalu memerlukan gaya total agar tetap bergerak.",
+          "Menyamakan kelembaman dengan gaya lalu menggambarnya sebagai panah pada diagram gaya.",
+          "Mengira ΣF = 0 berarti benda pasti diam, padahal benda juga bisa bergerak lurus dengan kecepatan tetap.",
+          "Lupa memperhitungkan arah gaya saat menjumlahkan sehingga resultan salah.",
+        ],
+        checks: [
+          {
+            question:
+              "Sebuah mobil melaju lurus dengan kecepatan tetap di jalan datar. Pernyataan yang benar adalah...",
+            options: [
+              "Resultan gaya pada mobil sama dengan nol",
+              "Mesin harus memberi gaya total ke depan yang terus membesar",
+              "Resultan gaya pada mobil searah dengan geraknya",
+              "Mobil tidak mengalami gaya apa pun",
+            ],
+            correctIndex: 0,
+            explanation:
+              "Kecepatan tetap berarti percepatan nol, sehingga ΣF = 0. Mobil tetap mengalami beberapa gaya, tetapi gaya dorong mesin diimbangi gaya hambat.",
+          },
+          {
+            question: "Benda mana yang kelembamannya paling besar?",
+            options: ["Kelereng 5 gram", "Bola basket 600 gram", "Batu bata 2 kg", "Karung pasir 20 kg"],
+            correctIndex: 3,
+            explanation: "Kelembaman ditentukan oleh massa, dan karung pasir bermassa paling besar.",
+          },
+          {
+            question:
+              "Peti didorong dengan gaya 80 N dan bergerak dengan kecepatan tetap. Besar gaya gesek pada peti adalah...",
+            options: ["0 N", "40 N", "80 N", "160 N"],
+            correctIndex: 2,
+            explanation:
+              "Kecepatan tetap berarti ΣF = 0, jadi gaya gesek sama besar dan berlawanan arah dengan dorongan, yaitu 80 N.",
+          },
+          {
+            question:
+              "Saat bus direm mendadak, penumpang terdorong ke depan. Penyebab yang paling tepat adalah...",
+            options: [
+              "Ada gaya dari depan yang menarik penumpang",
+              "Tubuh penumpang cenderung mempertahankan gerak lurusnya",
+              "Gaya gesek kursi mendorong penumpang ke depan",
+              "Massa penumpang bertambah saat bus berhenti",
+            ],
+            correctIndex: 1,
+            explanation: "Kelembaman membuat tubuh melanjutkan gerak ke depan saat bus melambat.",
+          },
+        ],
+        recap: [
+          "Hukum I Newton: tanpa gaya total, keadaan gerak benda tidak berubah.",
+          "Kelembaman adalah sifat benda, dan makin besar untuk massa yang makin besar.",
+          "Kelembaman bukan gaya dan tidak digambar sebagai panah gaya.",
+          "Syaratnya adalah resultan gaya sama dengan nol (ΣF = 0, jadi a = 0).",
+          "Kecepatan tetap tidak memerlukan gaya total. Hanya perubahan kecepatan yang memerlukannya.",
         ],
       },
       {
