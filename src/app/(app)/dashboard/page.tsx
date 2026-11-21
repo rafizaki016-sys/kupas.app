@@ -235,14 +235,15 @@ export default function DashboardPage() {
         id: fallbackId,
         title: trimmed.length > 72 ? `${trimmed.slice(0, 69).trim()}...` : trimmed,
         source_type: (trimmed.startsWith("http") ? "youtube" : "text") as StudySet["source_type"],
-        created_at: new Date().toISOString(),
+                created_at: new Date().toISOString(),
         summary_markdown: `## Ringkasan Materi\n- Topik utama: ${trimmed}\n- Catatan ini siap dikembangkan menjadi flashcard dan kuis.`,
-        
+        flashcards: [
           {
             id: "fc-1",
             front: `Apa inti utama dari "${trimmed.slice(0, 48)}"?`,
             back: "Poin konsep kunci yang dirangkum langsung dari materi yang kamu masukkan.",
           },
+        ],     
         ],
         quiz: [
           {
